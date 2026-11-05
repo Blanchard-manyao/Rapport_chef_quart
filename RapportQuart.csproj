@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AssemblyName>RapportQuart</AssemblyName>
+    <RootNamespace>RapportQuart</RootNamespace>
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+    <ApplicationIcon>exat_agri_fb.ico</ApplicationIcon>
+    <Company>Blanchard Yao</Company>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Le projet de tests vit dans un sous-dossier : ne pas le compiler dans l'exe -->
+    <Compile Remove="RapportQuart.Tests\**" />
+    <EmbeddedResource Remove="RapportQuart.Tests\**" />
+    <None Remove="RapportQuart.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- SQLite chiffré (SQLCipher) : remplace Microsoft.Data.Sqlite + sqlite3 standard -->
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="8.0.*" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlcipher" Version="2.1.*" />
+    <!-- Protection de la clé par Windows (DPAPI) -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Le schema SQL est integre dans l'exe -->
+    <EmbeddedResource Include="rapports-quart.sql" LogicalName="schema.sql" />
+    <!-- Icône de la fenêtre et de la barre des tâches (fond blanc conservé) -->
+    <EmbeddedResource Include="exat_agri_fb.ico" LogicalName="icone.ico" />
+  </ItemGroup>
+
+</Project>

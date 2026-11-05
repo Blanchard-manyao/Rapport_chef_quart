@@ -1,0 +1,17 @@
+RAPPORT CHEF DE QUART - version C# / .NET 8
+============================================
+
+1. FABRIQUER L'INSTALLATEUR (une seule fois, sur un PC avec Internet)
+   a. Installer le SDK .NET 8 (ou plus recent): dotnet.microsoft.com/download
+   b. Installer Inno Setup 6 (gratuit): jrsoftware.org/isdl.php
+   c. Double-clic sur construire.bat
+   d. Resultat: installateur\Installer_Rapport_Chef_Quart.exe
+
+2. INSTALLER SUR LE PC DU BUREAU
+   Lancer Installer_Rapport_Chef_Quart.exe (administrateur). Rien d'autre a installer:
+   .NET est inclus. Un raccourci apparait sur le bureau de toutes les sessions.
+
+3. DONNEES
+   C:\ProgramData\RapportQuart\rapports_quart.db  (meme emplacement et meme format
+   que la version Python: les anciens rapports sont repris automatiquement).
+   sauvegarder.bat copie la base dans ce dossier.
