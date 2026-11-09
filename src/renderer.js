@@ -15,6 +15,7 @@ const state = {
   legacyConnected: false,
   legacyPrompted: false,
   refreshTimer: null,
+  sessionVersion: 0,
 };
 const $ = (s, root = document) => root.querySelector(s),
   esc = (s) =>
@@ -31,6 +32,23 @@ const $ = (s, root = document) => root.querySelector(s),
     );
 const dateFmt = (x) =>
   x ? new Date(x + "T00:00:00").toLocaleDateString("fr-FR") : "";
+const fileDate = () => {
+  const now = new Date();
+  return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+};
+window.addEventListener("focus", () => {
+  const password = $("#loginForm input[name='password']");
+  if (password && document.activeElement !== password)
+    password.focus({ preventScroll: true });
+});
+const STOP_ZONES = [
+  "Séchoir 1",
+  "Séchoir 2",
+  "Séchoir 3",
+  "Ligne 1",
+  "Ligne 2",
+  "Prélavage",
+];
 function toast(s) {
   const e = document.createElement("div");
   e.className = "toast";
@@ -38,20 +56,23 @@ function toast(s) {
   document.body.append(e);
   setTimeout(() => e.remove(), 3200);
 }
-async function reload() {
+async function reload(expectedVersion = state.sessionVersion) {
   const x = await cq.bootstrap();
+  if (expectedVersion !== state.sessionVersion) return false;
   state.reports = x.reports || [];
   state.audit = x.audit || [];
   state.secure = x.secure;
   state.users = x.users || [];
   state.adminSet = x.adminSet;
   state.recoveryKey = x.recoveryKey;
+  state.adminSetupKey = x.recoveryKeyForSetup;
   state.legacyAvailable = x.legacyAvailable;
   state.legacyConnected = x.legacyConnected;
+  return true;
 }
-function login() {
+function login(refocusAfterSession = false) {
   app.innerHTML = `<main class="login panel"> 
-  <h1>Rapport Chef de Quart </h1> 
+  <h1>Rapport Chef de Quart</h1>
   <p class="muted"> Connexion </p>
   <form id="loginForm"> 
   <label class="field"> Profil <select name="user"> 
@@ -62,9 +83,8 @@ function login() {
   <option value="Administrateur">Administrateur</option>
   </select> </label> <label class="field">Mot de passe<input name="password" type="password" required maxlength="64"></label>
   <label class="field" id="confirmWrap"> confirmer le mot de passe<input name="confirmation" type="password" maxlength="64">
-  </label><label class="field hidden" id="recoveryWrap">Clé de récupération<input name="recoveryKey" autocomplete="off"> </label>
   <p class="muted" id="loginMessage"> </p>
-  <div class="actions"> <button> Se connecter </button>
+  <div class="actions"> <button type="submit">Se connecter</button>
   <button type="button" id="forgot" class="secondary"> Mot de passe oublié ? </button> </div>
   </form> 
   </main>`;
@@ -75,41 +95,67 @@ function login() {
       exists = state.users.includes(user.value);
     $("#confirmWrap").classList.toggle("hidden", exists);
     $("#confirmWrap").querySelector("input").required = !exists;
-    $("#recoveryWrap").classList.toggle(
-      "hidden",
-      admin ? state.adminSet : !exists,
-    );
-    $("#recoveryWrap").querySelector("input").required = admin
-      ? !state.adminSet
-      : false;
     $("#loginMessage").textContent = admin
       ? state.adminSet
         ? "Connectez-vous pour ouvrir le tableau de bord administrateur."
-        : "Initialisation administrateur : saisissez la clé de récupération affichée au premier lancement."
+        : "Première connexion : le compte administrateur doit être initialisé avec la clé de récupération."
       : exists
         ? ""
         : "Première utilisation : choisissez et confirmez un mot de passe (6 caractères minimum).";
   };
   user.onchange = mode;
   mode();
+  const focusPassword = () => {
+    const password = form.elements.password;
+    cq.focusApp()
+      .catch(() => false)
+      .then(() => {
+        if (!password.isConnected) return;
+        window.focus();
+        password.focus({ preventScroll: true });
+      });
+  };
+  requestAnimationFrame(focusPassword);
+  if (refocusAfterSession) setTimeout(focusPassword, 180);
   form.onsubmit = async (e) => {
     e.preventDefault();
-    const f = new FormData(form),
+    const sessionVersion = ++state.sessionVersion;
+    const submitButton = form.querySelector('button[type="submit"]');
+    submitButton.disabled = true;
+    const f = new FormData(form);
+    let res;
+    try {
       res = await cq.auth({
         user: f.get("user"),
         password: f.get("password"),
         confirmation: f.get("confirmation"),
-        recoveryKey: f.get("recoveryKey"),
+        recoveryKey: state.adminSet ? "" : state.adminSetupKey,
       });
+    } catch (error) {
+      $("#loginMessage").textContent = `Connexion impossible : ${error.message}`;
+      submitButton.disabled = false;
+      return;
+    }
     if (!res.ok) {
       $("#loginMessage").textContent = res.message;
+      submitButton.disabled = false;
       return;
     }
     state.user = res.user;
     state.admin = res.user === "Administrateur";
     state.tab = state.admin ? "home" : "create";
     window.CQUser = state.user;
-    await reload();
+    try {
+      if (!(await reload(sessionVersion))) return;
+    } catch (error) {
+      state.user = null;
+      state.admin = false;
+      window.CQUser = null;
+      await cq.logout();
+      $("#loginMessage").textContent = `Connexion interrompue : ${error.message}`;
+      submitButton.disabled = false;
+      return;
+    }
     if (state.admin && !state.refreshTimer)
       state.refreshTimer = setInterval(async () => {
         if (!document.querySelector(".modal")) {
@@ -227,15 +273,8 @@ function render() {
       }),
   );
   $("#logout").onclick = async () => {
-    await cq.logout();
-    if (state.refreshTimer) clearInterval(state.refreshTimer);
-    state.refreshTimer = null;
-    state.user = null;
-    state.admin = false;
-    state.reports = [];
-    state.audit = [];
-    window.CQUser = null;
-    login();
+    if (!window.confirm("Voulez-vous vraiment vous déconnecter ?")) return;
+    await closeSession();
   };
   $("#password").onclick = passwordDialog;
   if (state.admin && $("#backup"))
@@ -248,13 +287,9 @@ function render() {
     };
   if (!state.admin)
     $("#changeTeam").onclick = async () => {
-      await cq.logout();
-      state.user = null;
-      state.admin = false;
-      state.reports = [];
-      state.audit = [];
-      window.CQUser = null;
-      login();
+      if (!window.confirm("Voulez-vous vous déconnecter pour changer d’équipe ?"))
+        return;
+      await closeSession();
     };
   if ($("#refresh"))
     $("#refresh").onclick = async () => {
@@ -283,6 +318,21 @@ function render() {
       audit: auditView,
     })[state.tab] || createView
   )(view);
+}
+async function closeSession() {
+  const sessionVersion = ++state.sessionVersion;
+  if (state.refreshTimer) clearInterval(state.refreshTimer);
+  state.refreshTimer = null;
+  state.user = null;
+  state.admin = false;
+  state.tab = "home";
+  state.reports = [];
+  state.audit = [];
+  window.CQUser = null;
+  document.querySelectorAll(".modal, .synthesis-drawer, .row-menu").forEach((el) => el.remove());
+  await cq.logout();
+  if (sessionVersion !== state.sessionVersion) return;
+  login(true);
 }
 function passwordDialog() {
   document.body.insertAdjacentHTML(
@@ -560,35 +610,22 @@ function displayStops(id, target = "reportStops") {
 }
 function stopsView(el) {
   const st = allStops().sort(
-      (a, b) =>
-        a.date.localeCompare(b.date) ||
-        D.SHIFTS.indexOf(a.shift) - D.SHIFTS.indexOf(b.shift) ||
-        a.team.localeCompare(b.team) ||
-        (D.parseTime(a.start) ?? 0) - (D.parseTime(b.start) ?? 0),
-    ),
-    zones = {};
-  st.forEach((s) => (zones[s.zone] = (zones[s.zone] || 0) + s.minutes));
-  const sectors = [
-    ["GRANULATION", ["Ligne 1", "Ligne 2"]],
-    ["PRÉLAVAGE", ["Prélavage"]],
-    ["ZONE SÈCHE", ["Séchoir 1", "Séchoir 2", "Séchoir 3"]],
-    ["AUTRE ZONE", ["Autre"]],
-  ];
-  const known = new Set(sectors.flatMap((x) => x[1]));
-  const bySector =
-    sectors
-      .map(
-        ([name, list]) =>
-          `<h3>${name}</h3><div class="zone-row"><b>TOTAL SECTEUR</b><b>${D.durationText(sum(list.map((z) => zones[z] || 0)))}</b></div>${list.map((z) => `<div class="zone-row"><span>${esc(z === "Autre" ? "Autre zone" : z)}</span><b>${D.durationText(zones[z] || 0)}</b></div>`).join("")}`,
-      )
-      .join("") +
-    Object.entries(zones)
-      .filter(([z]) => !known.has(z))
-      .map(
-        ([z, m]) =>
-          `<div class="zone-row"><span>${esc(z)}</span><b>${D.durationText(m)}</b></div>`,
-      )
-      .join("");
+    (a, b) =>
+      a.date.localeCompare(b.date) ||
+      D.SHIFTS.indexOf(a.shift) - D.SHIFTS.indexOf(b.shift) ||
+      a.team.localeCompare(b.team) ||
+      (D.parseTime(a.start) ?? 0) - (D.parseTime(b.start) ?? 0),
+  );
+  const zoneTotals = STOP_ZONES.map((zone) => ({
+    name: zone,
+    minutes: sum(st.filter((stop) => stop.zone === zone).map((stop) => stop.minutes)),
+  }));
+  const zoneCards = zoneTotals
+    .map(
+      ({ name, minutes }) =>
+        `<article class="zone-card"><span>${esc(name)}</span><b>${D.durationText(minutes)}</b></article>`,
+    )
+    .join("");
   const rows = st
     .map((s, i) => {
       const prev = st[i - 1],
@@ -599,7 +636,7 @@ function stopsView(el) {
       return `<tr class="${startGroup ? "stop-group-start" : ""}"><td>${dateFmt(s.date)}</td><td>${esc(s.shift)}</td><td>${esc(s.team)}</td><td>${esc(s.zone)}</td><td>${esc(D.normalizeTime(s.start))}–${esc(D.normalizeTime(s.end))}</td><td>${esc(s.cause)}</td><td>${D.durationText(s.minutes)}</td></tr>`;
     })
     .join("");
-  el.innerHTML = `<div class="actions"><button id="exportStops">Exporter les arrêts XLSX</button></div><section class="panel stop-summary"><h2>Temps d’arrêt par secteur et par zone</h2>${bySector || "<p>Aucun arrêt pour cette période.</p>"}</section><section class="panel stop-details"><h2>Détail par jour et quart — un arrêt distinct par ligne</h2><div class="tablewrap"><table><thead><tr><th>Jour</th><th>Quart</th><th>Équipe</th><th>Zone</th><th>Heures</th><th>Cause</th><th>Durée</th></tr></thead><tbody>${rows || '<tr><td colspan="7">Aucun arrêt enregistré pour cette période.</td></tr>'}</tbody></table></div></section>`;
+  el.innerHTML = `<div class="actions"><button id="exportStops">Exporter les arrêts XLSX</button></div><section class="panel stop-summary"><h2>Temps d’arrêt par zone</h2><div class="zone-grid">${zoneCards}</div></section><section class="panel stop-details"><h2>Détail par jour et quart — un arrêt distinct par ligne</h2><div class="tablewrap"><table><thead><tr><th>Jour</th><th>Quart</th><th>Équipe</th><th>Zone</th><th>Heures</th><th>Cause</th><th>Durée</th></tr></thead><tbody>${rows || '<tr><td colspan="7">Aucun arrêt enregistré pour cette période.</td></tr>'}</tbody></table></div></section>`;
   $("#exportStops").onclick = async () => {
     const rows = [
       ["Jour", "Quart", "Équipe", "Zone", "Début", "Fin", "Cause", "Durée"],
@@ -614,7 +651,7 @@ function stopsView(el) {
         D.durationText(s.minutes),
       ]),
     ];
-    if (await cq.exportXlsx({ name: "temps-arret.xlsx", rows }))
+    if (await cq.exportXlsx({ name: `temps-arret_${fileDate()}.xlsx`, rows }))
       toast("Export XLSX terminé");
   };
 }
@@ -745,7 +782,7 @@ async function exportReports(rs) {
       ];
     }),
   ];
-  if (await cq.exportXlsx({ name: "rapports-quart.xlsx", rows }))
+  if (await cq.exportXlsx({ name: `rapports-quart_${fileDate()}.xlsx`, rows }))
     toast("Export Excel terminé");
 }
 async function init() {

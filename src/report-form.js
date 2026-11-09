@@ -43,7 +43,7 @@
     return `<section class="panel form-section stop-group" data-stop-group-zone="${escapeHtml(zone)}">
       <h3>${title}</h3>
       <div class="stops-list">${items.map((item) => stopRow(item, zone)).join("")}</div>
-      <button class="secondary add-stop" type="button">Ajouter un arrêt</button> 
+      <button class="secondary add-stop" type="button">Ajouter un arrêt</button>
       <div class="stop-summary" aria-live="polite">Temps d’arrêt : <output data-stop-total>0 h 00 min</output><span>Temps de fonctionnement : <output data-stop-run>8 h 00 min</output></span></div>
     </section>`;
   }
