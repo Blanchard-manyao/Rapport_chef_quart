@@ -1,0 +1,45 @@
+{
+  "name": "rapport-cq-js",
+  "version": "1.0.0",
+  "description": "Application Windows de rapports de quart",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis zip"
+  },
+  "dependencies": {
+    "@7mind.io/sqlcipher-wasm": "^1.4.0",
+    "@primno/dpapi": "^2.0.1",
+    "sql.js": "^1.13.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "electron": "^34.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "ci.missehi.rapportcq",
+    "productName": "Rapport Chef de Quart",
+    "npmRebuild": false,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "assets/exat_agri_fb.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
