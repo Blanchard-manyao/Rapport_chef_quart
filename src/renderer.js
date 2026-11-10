@@ -142,6 +142,9 @@ function login(refocusAfterSession = false) {
   mode();
   const focusPassword = () => {
     const password = form.elements.password;
+    if (!password.isConnected) return;
+    window.focus();
+    password.focus({ preventScroll: true });
     cq.focusApp()
       .catch(() => false)
       .then(() => {
@@ -152,8 +155,9 @@ function login(refocusAfterSession = false) {
   };
   requestAnimationFrame(focusPassword);
   if (refocusAfterSession) {
-    setTimeout(focusPassword, 180);
-    setTimeout(focusPassword, 420);
+    setTimeout(focusPassword, 100);
+    setTimeout(focusPassword, 350);
+    setTimeout(focusPassword, 700);
   }
   form.onsubmit = async (e) => {
     e.preventDefault();
@@ -305,17 +309,14 @@ function render() {
         render();
       }),
   );
-  $("#logout").onclick = async () => {
-    if (!window.confirm("Voulez-vous vraiment vous déconnecter ?")) return;
-    await closeSession();
-  };
+  $("#logout").onclick = () => confirmSessionClose(
+    "Voulez-vous vraiment vous déconnecter ?",
+  );
   $("#password").onclick = passwordDialog;
   if (!state.admin)
-    $("#changeTeam").onclick = async () => {
-      if (!window.confirm("Voulez-vous vous déconnecter pour changer d’équipe ?"))
-        return;
-      await closeSession();
-    };
+    $("#changeTeam").onclick = () => confirmSessionClose(
+      "Voulez-vous vous déconnecter pour changer d’équipe ?",
+    );
   if ($("#refresh"))
     $("#refresh").onclick = async () => {
       await reload();
@@ -386,6 +387,20 @@ async function closeSession() {
   } finally {
     if (sessionVersion === state.sessionVersion) login(true);
   }
+}
+// Confirmation intégrée : une boîte native pouvait conserver le focus clavier
+// après sa fermeture et empêcher la saisie du mot de passe dans Electron.
+function confirmSessionClose(message) {
+  const modal = document.createElement("div");
+  modal.className = "modal";
+  modal.innerHTML = `<section class="panel"><h2>Fermer la session</h2><p>${esc(message)}</p><div class="actions"><button type="button" class="confirm-session">Se déconnecter</button><button type="button" class="secondary cancel-session">Annuler</button></div></section>`;
+  document.body.append(modal);
+  modal.querySelector(".cancel-session").onclick = () => modal.remove();
+  modal.querySelector(".confirm-session").onclick = async () => {
+    modal.remove();
+    await closeSession();
+  };
+  modal.querySelector(".confirm-session").focus();
 }
 function passwordDialog() {
   document.body.insertAdjacentHTML(
@@ -462,7 +477,7 @@ function productionCurve(reports, mode = "day") {
     return '<p class="muted">Aucune production enregistrée pour cette période.</p>';
 
   const teams = Object.keys(D.TEAMS);
-  const colors = ["#2563eb", "#16a34a", "#f59e0b", "#9333ea"];
+  const colors = ["#2563eb", "#f59e0b", "#FF2C2C", "#16a34a"];
   const values = teams.map((team) =>
     dates.map((date) =>
       sum(
@@ -528,21 +543,49 @@ function productionCurve(reports, mode = "day") {
 
   return `<div class="line-chart-with-legend"><div class="line-chart-wrap"><svg class="line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Évolution de la production par équipe ${mode === "month" ? "par mois" : "par jour"}">${grid}${series}${labels}</svg></div><div class="legend">${legend}</div></div>`;
 }
-function reportTable(rs, withActions = false) {
+function isReportEditable(report) {
+  if (!report || state.admin || report.team !== state.user || !report.createdAt)
+    return false;
+  const created = Date.parse(report.createdAt);
+  return Number.isFinite(created) && Date.now() - created <= 8 * 60 * 60 * 1000;
+}
+function reportTable(rs, withActions = false, historyActions = false) {
   return `<div class="tablewrap"><table><thead><tr><th>Date</th><th>Quart</th><th>Équipe</th><th>Effectif présent</th><th>Production</th><th>Tonnage (kg)</th>${withActions ? "<th>Action</th>" : ""}</tr></thead><tbody>${rs
     .map((r) => {
       const d = D.derive(r);
-      return `<tr class="report-row" data-id="${esc(r.id)}"><td>${dateFmt(r.date)}</td><td>${esc(r.shift)}</td><td>${esc(r.team)}</td><td>${d.present}</td><td>${Number(r.production?.parcels || 0)}</td><td>${d.kg.toLocaleString("fr-FR")}</td>${withActions ? `<td><button class="secondary" data-open="${esc(r.id)}">Voir</button> <button data-synthesis="${esc(r.id)}">Synthèse</button></td>` : ""}</tr>`;
+      const action = historyActions
+        ? isReportEditable(r)
+          ? `<button data-edit="${esc(r.id)}">Revoir / modifier</button>`
+          : `<button class="secondary" data-open="${esc(r.id)}">Voir</button>`
+        : `<button class="secondary" data-open="${esc(r.id)}">Voir</button> <button data-synthesis="${esc(r.id)}">Synthèse</button>`;
+      return `<tr class="report-row" data-id="${esc(r.id)}"><td>${dateFmt(r.date)}</td><td>${esc(r.shift)}</td><td>${esc(r.team)}</td><td>${d.present}</td><td>${Number(r.production?.parcels || 0)}</td><td>${d.kg.toLocaleString("fr-FR")}</td>${withActions ? `<td>${action}</td>` : ""}</tr>`;
     })
     .join("")}</tbody></table></div>`;
 }
-function bindReportButtons() {
-  document
+function bindReportButtons(root = document) {
+  root
     .querySelectorAll("[data-open]")
-    .forEach((b) => (b.onclick = () => openReport(b.dataset.open)));
-  document
+    .forEach((b) => (b.onclick = (event) => {
+      event.stopPropagation();
+      openReport(b.dataset.open);
+    }));
+  root
     .querySelectorAll("[data-synthesis]")
-    .forEach((b) => (b.onclick = () => synthesis(b.dataset.synthesis)));
+    .forEach((b) => (b.onclick = (event) => {
+      event.stopPropagation();
+      synthesis(b.dataset.synthesis);
+    }));
+  root
+    .querySelectorAll("[data-edit]")
+    .forEach((b) => (b.onclick = (event) => {
+      event.stopPropagation();
+      const report = state.reports.find((item) => item.id === b.dataset.edit);
+      if (!isReportEditable(report)) {
+        toast("Le délai de modification de 8 heures est dépassé.");
+        return;
+      }
+      newReport(report);
+    }));
 }
 // home : construit les indicateurs, les six zones, le camembert et la courbe.
 function home(el) {
@@ -553,7 +596,7 @@ function home(el) {
       name: zone,
       minutes: sum(st.filter((stop) => stop.zone === zone).map((stop) => stop.minutes)),
     })),
-    colors = ["#2563eb", "#16a34a", "#f59e0b", "#9333ea"],
+    colors = ["#2563eb", "#f59e0b", "#FF2C2C", "#16a34a"],
     teams = Object.keys(D.TEAMS),
     totals = teams.map((team) =>
       sum(rs.filter((r) => r.team === team).map((r) => r.production?.parcels)),
@@ -647,7 +690,7 @@ function historyView(el) {
     .map((x) => `<option value="${x}">${x}</option>`)
     .join(
       "",
-    )}</select></label><button id="clearFilter" class="secondary">Effacer les filtres</button>${state.admin ? '<button id="exportHistory">Exporter Excel</button>' : ""}</div><div id="historyTable">${reportTable(period())}</div><h3>Arrêts du rapport sélectionné</h3><div id="historyStops" class="muted">Sélectionnez un rapport.</div></section>`;
+    )}</select></label><button id="clearFilter" class="secondary">Effacer les filtres</button>${state.admin ? '<button id="exportHistory">Exporter Excel</button>' : ""}</div><div id="historyTable">${reportTable(period(), !state.admin, !state.admin)}</div><h3>Arrêts du rapport sélectionné</h3><div id="historyStops" class="muted">Sélectionnez un rapport.</div></section>`;
   const apply = () => {
     let list = period();
     const date = $("#filterDate").value,
@@ -659,13 +702,18 @@ function historyView(el) {
         (!shift || r.shift === shift) &&
         (!team || r.team === team),
     );
-    $("#historyTable").innerHTML = reportTable(list);
+    $("#historyTable").innerHTML = reportTable(
+      list,
+      !state.admin,
+      !state.admin,
+    );
     document
       .querySelectorAll("#historyTable tbody tr[data-id]")
       .forEach((tr) => {
         tr.onclick = () => displayStops(tr.dataset.id, "historyStops");
         tr.ondblclick = () => synthesis(tr.dataset.id);
       });
+    bindReportButtons($("#historyTable"));
     if (state.admin)
       $("#exportHistory").onclick = () =>
         exportReports(list, $("#filterDate").value);
@@ -805,7 +853,20 @@ function newReport(existing = null) {
       const saved = state.reports.find(
         (item) => item.date === r.date && item.shift === r.shift && item.team === r.team,
       );
-      if (saved) synthesis(saved.id);
+      if (saved) {
+        synthesis(saved.id);
+        try {
+          const capturePath = await captureSynthesisTable(saved);
+          showCaptureStatus(`Capture effectuée. Fichier enregistré ici : ${capturePath}`);
+          toast(`Synthèse capturée : ${capturePath}`);
+        } catch (captureError) {
+          // Le rapport est déjà sauvegardé : une erreur de capture ne doit pas
+          // laisser croire à l’opérateur que l’enregistrement a échoué.
+          console.error("Capture automatique de la synthèse impossible :", captureError);
+          showCaptureStatus(`La capture n’a pas pu être effectuée : ${captureError.message}`);
+          toast(`Rapport enregistré, capture impossible : ${captureError.message}`);
+        }
+      }
       return true;
     } catch (e) {
       alert(e.message);
@@ -869,35 +930,83 @@ function synthesis(id) {
         </table></div>
       </div>
       <div class="synthesis-actions">
-        ${state.admin ? '<button id="captureSynthesis" class="secondary">Capturer le tableau</button><button id="openCaptures" class="secondary">Ouvrir le dossier de capture</button>' : ""}
+        <div class="synthesis-buttons"><button id="captureSynthesis" class="secondary">Capturer le tableau</button><button id="openCaptures" class="secondary">Ouvrir le dossier de capture</button>
         <button type="button" class="secondary close-synthesis">Fermer</button>
+        </div><p class="synthesis-status" id="captureStatus" role="status" aria-live="polite"></p>
       </div>
     </section></div>`,
   );
   $(".close-synthesis").onclick = () =>
     document.querySelector(".synthesis-modal")?.remove();
-  if (state.admin) {
-    $("#captureSynthesis").onclick = async () => {
-      const node = document.querySelector("#synthesisCapture"),
-        b = node.getBoundingClientRect();
-      try {
-        const file = await cq.captureSynthesis({
-          x: b.x,
-          y: b.y,
-          width: b.width,
-          height: b.height,
-          reportId: id,
-          name: `Synthese_${r.date}_${r.shift.replaceAll("/", "-")}_Equipe-${r.team}.png`,
-        });
-        toast(`Capture enregistrée : ${file}`);
-      } catch (e) {
-        alert(e.message);
-      }
-    };
-    $("#openCaptures").onclick = async () => {
-      const error = await cq.openCaptures();
-      if (error) alert(error);
-    };
+  $("#captureSynthesis").onclick = async () => {
+    try {
+      const file = await captureSynthesisTable(r);
+      showCaptureStatus(`Capture effectuée. Fichier enregistré ici : ${file}`);
+      toast("Capture de la synthèse enregistrée.");
+    } catch (e) {
+      showCaptureStatus(`La capture n’a pas pu être effectuée : ${e.message}`);
+    }
+  };
+  $("#openCaptures").onclick = async () => {
+    const error = await cq.openCaptures();
+    if (error) showCaptureStatus(`Ouverture du dossier impossible : ${error}`);
+  };
+}
+function showCaptureStatus(message) {
+  const status = document.querySelector("#captureStatus");
+  if (status) status.textContent = message;
+}
+// Capture le tableau entier, en levant temporairement le défilement interne.
+async function captureSynthesisTable(report) {
+  const node = document.querySelector("#synthesisCapture");
+  if (!node) throw new Error("La synthèse n’est pas affichée.");
+  const modal = node.closest(".synthesis-modal");
+  const drawer = node.closest(".synthesis-drawer");
+  const wrap = node.querySelector(".synthesis-table-wrap");
+  const table = node.querySelector(".synthesis-table");
+  const cells = node.querySelectorAll(".synthesis-table th, .synthesis-table td");
+  const savedStyles = [modal, drawer, node, wrap, table].map((element) => element.style.cssText);
+  const savedCellStyles = [...cells].map((cell) => cell.style.cssText);
+  try {
+    drawer.style.height = "auto";
+    drawer.style.maxHeight = "none";
+    drawer.style.overflow = "visible";
+    node.style.flex = "none";
+    node.style.minHeight = "auto";
+    wrap.style.height = "auto";
+    wrap.style.maxHeight = "none";
+    wrap.style.flex = "none";
+    wrap.style.overflow = "visible";
+    table.style.height = "auto";
+    // Ajuste la hauteur des lignes pour faire tenir toutes les données dans
+    // la fenêtre, y compris sur les petits écrans.
+    const rowHeight = Math.max(
+      12,
+      Math.min(32, (window.innerHeight * 0.82 - 170) / table.rows.length),
+    );
+    cells.forEach((cell) => {
+      cell.style.height = `${rowHeight}px`;
+      cell.style.fontSize = `${Math.max(9, Math.min(13, rowHeight * 0.46))}px`;
+    });
+    // Deux frames laissent Chromium recalculer la taille réelle du tableau.
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const bounds = node.getBoundingClientRect();
+    const safeName = String(report.shift || "Quart").replace(/[^\w-]+/g, "-");
+    return await cq.captureSynthesis({
+      x: bounds.x,
+      y: bounds.y,
+      width: bounds.width,
+      height: bounds.height,
+      reportId: report.id,
+      name: `Synthese_${report.date}_${safeName}.png`,
+    });
+  } finally {
+    [modal, drawer, node, wrap, table].forEach((element, index) => {
+      element.style.cssText = savedStyles[index];
+    });
+    [...cells].forEach((cell, index) => {
+      cell.style.cssText = savedCellStyles[index];
+    });
   }
 }
 // exportReports : exporte les rapports visibles en reprenant la date du filtre.

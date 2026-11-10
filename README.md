@@ -36,3 +36,7 @@ Les données locales sont chiffrées par Windows via Electron `safeStorage` lors
 Au premier accès administrateur, l’application détecte et importe automatiquement `C:\ProgramData\RapportQuart\rapports_quart.db` (ou le dossier défini par `RAPPORT_QUART_DONNEES`). L’import lit les fichiers SQLite en clair et les bases SQLCipher de l’ancien programme (avec `cle.dat`, déchiffré par DPAPI Windows). Il importe les rapports, les relevés séchoirs, les arrêts, les générateurs et les mots de passe des équipes. Les rapports ayant le même identifiant sont ignorés ; la base source n’est jamais modifiée.
 
 Les données sont conservées dans le dossier utilisateur d’Electron. Les exports de rapports et de temps d’arrêt sont des fichiers `.xlsx`.
+
+## Base de données JavaScript
+
+La version JavaScript utilise une base SQLCipher 4 nommée `rapport-cq.db`, située dans `%APPDATA%\rapport-cq-js`. Ouvre-la avec **DB Browser for SQLCipher** (et non l’édition SQLite seule), sélectionne SQLCipher 4 et saisis la phrase secrète SQLCipher de cette installation. Ferme l’application avant de modifier les données dans DB Browser ; les rapports sont dans la table `reports` et leur contenu détaillé est conservé dans `payload_json`.

@@ -11,11 +11,25 @@ const {
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+// Une seule instance par session Windows ; un second lancement réactive la première.
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) app.quit();
+else
+  app.on("second-instance", () => {
+    if (win && !win.isDestroyed()) focusMainWindow();
+  });
 // Processus principal Electron : fenêtre, accès aux données et règles serveur.
 let win;
 let activeUser = null;
+let sqliteApi = null;
+let sqliteModule = null;
+let sqliteDatabase = null;
+let sqlCipherKey = null;
 const REPORT_EDIT_WINDOW_HOURS = 8;
-const file = () => path.join(app.getPath("userData"), "rapport-cq.dat");
+const file = () => path.join(app.getPath("userData"), "rapport-cq.db");
+const oldDataFile = () => path.join(app.getPath("userData"), "rapport-cq.dat");
+const sqliteVirtualPath = "/rapport-cq.db";
+const sqlCipherEntropy = Buffer.from("RapportQuart.Cle.v1", "utf8");
 const legacyDatabase = () =>
   path.join(
     process.env.RAPPORT_QUART_DONNEES ||
@@ -36,56 +50,221 @@ function log(level, message) {
   } catch {}
 }
 let data = { users: {}, reports: [] };
-function load() {
+function readOldDataFile() {
   try {
-    const raw = fs.readFileSync(file());
+    const raw = fs.readFileSync(oldDataFile());
     const text = safeStorage.isEncryptionAvailable()
       ? safeStorage.decryptString(raw)
       : raw.toString("utf8");
-    data = JSON.parse(text);
+    const oldData = JSON.parse(text);
+    if (oldData && oldData.users && Array.isArray(oldData.reports))
+      return oldData;
   } catch {
-    data = { users: {}, reports: [] };
+    // Aucun fichier .dat ou ancienne version illisible : on démarrera vide.
   }
+  return null;
+}
+function readOrCreateDatabaseKey(oldData) {
+  const locations = [
+    process.env.RAPPORT_QUART_DONNEES &&
+      path.join(process.env.RAPPORT_QUART_DONNEES, "cle.dat"),
+    path.join(process.env.ProgramData || "C:\\ProgramData", "RapportQuart", "cle.dat"),
+    path.join(app.getPath("userData"), "rapport-cq-sqlcipher-key.dat"),
+  ].filter(Boolean);
+  const { Dpapi, isPlatformSupported } = require("@primno/dpapi");
+  if (!isPlatformSupported)
+    throw new Error("Le chiffrement SQLCipher de l’application requiert Windows.");
+  for (const location of locations) {
+    if (!fs.existsSync(location)) continue;
+    try {
+      const key = Dpapi.unprotectData(
+        fs.readFileSync(location),
+        sqlCipherEntropy,
+        "LocalMachine",
+      ).toString("utf8").trim();
+      if (/^[0-9A-F]{40}$/i.test(key)) return key;
+    } catch {
+      // Un fichier cle.dat peut appartenir à un autre poste Windows ; on essaie
+      // alors la clé locale de l’application, ou la clé de récupération connue.
+    }
+  }
+  const localKeyFile = locations.at(-1);
+  const backupKey = String(oldData?.recoveryKey || "").trim().toUpperCase();
+  if (fs.existsSync(file())) {
+    if (/^[0-9A-F]{40}$/.test(backupKey)) return backupKey;
+    throw new Error(
+      "Clé SQLCipher introuvable. Gardez le fichier de clé du poste ayant créé cette base.",
+    );
+  }
+  const key = /^[0-9A-F]{40}$/.test(backupKey)
+    ? backupKey
+    : crypto.randomBytes(20).toString("hex").toUpperCase();
+  fs.mkdirSync(path.dirname(localKeyFile), { recursive: true });
+  fs.writeFileSync(
+    localKeyFile,
+    Dpapi.protectData(Buffer.from(key, "utf8"), sqlCipherEntropy, "LocalMachine"),
+  );
+  return key;
+}
+function readDatabaseState() {
+  const result = { users: {}, reports: [], loginAttempts: {} };
+  for (const row of sqliteDatabase.query("SELECT username, password_json FROM users"))
+    result.users[row.username] = JSON.parse(row.password_json);
+  for (const row of sqliteDatabase.query("SELECT report_id, report_date, shift, team, staff_total, staff_absent, production_parcels, baskets_dry, tonnage_kg, payload_json FROM reports ORDER BY report_date, shift, team")) {
+    const report = JSON.parse(row.payload_json);
+    report.id = row.report_id;
+    report.date = row.report_date;
+    report.shift = row.shift;
+    report.team = row.team;
+    report.staff ||= {};
+    report.staff.total = Number(row.staff_total) || 0;
+    report.staff.absent = Number(row.staff_absent) || 0;
+    report.production ||= {};
+    report.production.parcels = Number(row.production_parcels) || 0;
+    report.production.tonnageKg = Number(row.tonnage_kg) || 0;
+    report.drying ||= {};
+    report.drying.basketsDry = Number(row.baskets_dry) || 0;
+    result.reports.push(report);
+  }
+  for (const row of sqliteDatabase.query("SELECT username, attempts, locked_until FROM login_attempts"))
+    result.loginAttempts[row.username] = {
+      count: Number(row.attempts) || 0,
+      until: Number(row.locked_until) || 0,
+    };
+  for (const row of sqliteDatabase.query("SELECT setting, value_json FROM app_settings"))
+    result[row.setting] = JSON.parse(row.value_json);
+  return result;
+}
+function writeDatabaseState() {
+  if (!sqliteDatabase) throw new Error("La base SQLCipher n’est pas ouverte.");
+  sqliteDatabase.exec("BEGIN IMMEDIATE TRANSACTION");
+  try {
+    sqliteDatabase.exec("DELETE FROM users; DELETE FROM reports; DELETE FROM login_attempts; DELETE FROM app_settings");
+    for (const [username, password] of Object.entries(data.users || {}))
+      sqliteDatabase.query("INSERT INTO users (username, password_json) VALUES (?, ?)", [username, JSON.stringify(password)]);
+    for (const report of data.reports || [])
+      sqliteDatabase.query(
+        "INSERT INTO reports (report_id, report_date, shift, team, staff_total, staff_absent, production_parcels, baskets_dry, tonnage_kg, payload_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+          report.id,
+          report.date,
+          report.shift,
+          report.team,
+          Number(report.staff?.total) || 0,
+          Number(report.staff?.absent) || 0,
+          Number(report.production?.parcels) || 0,
+          Number(report.drying?.basketsDry) || 0,
+          Number(report.production?.tonnageKg) || 0,
+          JSON.stringify(report),
+        ],
+      );
+    for (const [username, attempt] of Object.entries(data.loginAttempts || {}))
+      sqliteDatabase.query("INSERT INTO login_attempts (username, attempts, locked_until) VALUES (?, ?, ?)", [username, Number(attempt.count) || 0, Number(attempt.until) || 0]);
+    for (const setting of ["recoveryKey", "recoveryAcknowledged", "legacyConnected"])
+      if (data[setting] !== undefined)
+        sqliteDatabase.query("INSERT INTO app_settings (setting, value_json) VALUES (?, ?)", [setting, JSON.stringify(data[setting])]);
+    sqliteDatabase.exec("COMMIT");
+  } catch (error) {
+    try { sqliteDatabase.exec("ROLLBACK"); } catch {}
+    throw error;
+  }
+  sqliteDatabase.close();
+  sqliteDatabase = null;
+  const bytes = Buffer.from(sqliteModule.FS.readFile(sqliteVirtualPath));
+  const target = file();
+  const temporary = `${target}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, bytes);
+  fs.renameSync(temporary, target);
+  sqliteDatabase = sqliteApi.open(sqliteVirtualPath, sqlCipherKey);
+  sqliteDatabase.exec("PRAGMA cipher_compatibility = 4");
+}
+async function load() {
+  const oldData = readOldDataFile();
+  sqlCipherKey = readOrCreateDatabaseKey(oldData);
+  const { initSQLite } = require("@7mind.io/sqlcipher-wasm");
+  sqliteApi = await initSQLite();
+  sqliteModule = sqliteApi.getModule();
+  const databaseExisted = fs.existsSync(file());
+  if (databaseExisted)
+    sqliteModule.FS.writeFile(sqliteVirtualPath, fs.readFileSync(file()));
+  sqliteDatabase = sqliteApi.open(sqliteVirtualPath, sqlCipherKey);
+  sqliteDatabase.exec("PRAGMA cipher_compatibility = 4");
+  sqliteDatabase.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      username TEXT PRIMARY KEY,
+      password_json TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS reports (
+      report_id TEXT PRIMARY KEY,
+      report_date TEXT NOT NULL,
+      shift TEXT NOT NULL,
+      team TEXT NOT NULL,
+      staff_total INTEGER,
+      staff_absent INTEGER,
+      production_parcels REAL,
+      baskets_dry REAL,
+      tonnage_kg REAL,
+      payload_json TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS login_attempts (
+      username TEXT PRIMARY KEY,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      locked_until INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS app_settings (
+      setting TEXT PRIMARY KEY,
+      value_json TEXT NOT NULL
+    );
+  `);
+  data = databaseExisted
+    ? readDatabaseState()
+    : oldData || {
+        users: {},
+        reports: [],
+        loginAttempts: {},
+        // Une base neuve reste vide au premier lancement ; l'import ancien
+        // pourra toujours être lancé explicitement par l'administrateur.
+        legacyConnected: true,
+      };
   data.users ||= {};
   data.reports ||= [];
   data.loginAttempts ||= {};
   if (!data.recoveryKey) {
     data.recoveryKey = crypto.randomBytes(20).toString("hex").toUpperCase();
     data.recoveryAcknowledged = false;
-    save();
   }
+  if (!databaseExisted || !sqliteDatabase.query("SELECT 1 FROM app_settings WHERE setting = 'recoveryKey'").length)
+    writeDatabaseState();
 }
 function save() {
   fs.mkdirSync(app.getPath("userData"), { recursive: true });
-  const text = JSON.stringify(data);
-  const bytes = safeStorage.isEncryptionAvailable()
-    ? safeStorage.encryptString(text)
-    : Buffer.from(text);
-  const target = file(),
-    temporary = `${target}.${process.pid}.tmp`;
-  try {
-    // Le fichier temporaire évite qu’une autre instance lise une écriture incomplète.
-    fs.writeFileSync(temporary, bytes);
-    fs.renameSync(temporary, target);
-  } finally {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
-  }
+  writeDatabaseState();
 }
 // Recharge le fichier partagé sans perdre la dernière copie valide en mémoire.
 function refreshSharedData() {
+  const previousBytes = sqliteModule &&
+    Buffer.from(sqliteModule.FS.readFile(sqliteVirtualPath));
   try {
-    const raw = fs.readFileSync(file()),
-      text = safeStorage.isEncryptionAvailable()
-        ? safeStorage.decryptString(raw)
-        : raw.toString("utf8"),
-      latest = JSON.parse(text);
+    if (!fs.existsSync(file())) return false;
+    if (sqliteDatabase) sqliteDatabase.close();
+    sqliteModule.FS.writeFile(sqliteVirtualPath, fs.readFileSync(file()));
+    sqliteDatabase = sqliteApi.open(sqliteVirtualPath, sqlCipherKey);
+    sqliteDatabase.exec("PRAGMA cipher_compatibility = 4");
+    const latest = readDatabaseState();
     if (!latest || !latest.users || !Array.isArray(latest.reports)) return false;
-    latest.loginAttempts ||= {};
     data = latest;
     return true;
   } catch {
-    // Une autre instance peut être en train d’écrire le fichier ; on garde
-    // la dernière copie valide et on réessaie au prochain rafraîchissement.
+    // Si une édition externe est incomplète, on rouvre la dernière image valide.
+    try {
+      if (previousBytes) {
+        sqliteModule.FS.writeFile(sqliteVirtualPath, previousBytes);
+        sqliteDatabase = sqliteApi.open(sqliteVirtualPath, sqlCipherKey);
+        sqliteDatabase.exec("PRAGMA cipher_compatibility = 4");
+      }
+    } catch {
+      sqliteDatabase = null;
+    }
     return false;
   }
 }
@@ -172,7 +351,7 @@ function backupDaily() {
   const dir = path.join(app.getPath("userData"), "Sauvegardes");
   fs.mkdirSync(dir, { recursive: true });
   const today = new Date().toISOString().slice(0, 10).replaceAll("-", "");
-  const target = path.join(dir, `rapport-cq-${today}.dat`);
+  const target = path.join(dir, `rapport-cq-${today}.db`);
   if (!fs.existsSync(target)) fs.copyFileSync(file(), target);
   const files = fs
     .readdirSync(dir)
@@ -354,7 +533,9 @@ function focusMainWindow() {
 ipcMain.handle("logout", async () => {
   log("INFO", `Session fermée (${activeUser || "inconnue"})`);
   activeUser = null;
-  return focusMainWindow();
+  // L’interface affiche d’abord le formulaire de connexion, puis le renderer
+  // demande le focus. Re-focaliser ici ciblait parfois le document précédent.
+  return true;
 });
 ipcMain.handle("focus-app", () => focusMainWindow());
 ipcMain.handle("change-password", (_, { current, next }) => {
@@ -377,16 +558,18 @@ ipcMain.handle("change-password", (_, { current, next }) => {
 ipcMain.handle("capture-synthesis", async (_, rect) => {
   if (!activeUser) throw new Error("Connectez-vous pour capturer la synthèse.");
   const report = data.reports.find((item) => item.id === rect?.reportId);
+  if (!report) throw new Error("Le rapport à capturer est introuvable.");
   if (
     activeUser !== "Administrateur" &&
-    (!report || report.team !== activeUser)
+    report.team !== activeUser
   )
     throw new Error("Vous pouvez capturer uniquement le rapport de votre équipe.");
   const root = path.join(app.getPath("documents"), "RapportQuart", "Captures");
-  const dir =
-    activeUser === "Administrateur"
-      ? root
-      : path.join(root, `Equipe-${activeUser}`);
+  // Chaque image va dans le dossier de l’équipe du rapport, même si
+  // l’administrateur a déclenché la capture depuis l’historique.
+  const dir = path.join(root, `Equipe-${report.team}`);
+  for (const team of ["A", "B", "C", "D"])
+    fs.mkdirSync(path.join(root, `Equipe-${team}`), { recursive: true });
   fs.mkdirSync(dir, { recursive: true });
   const safe = Object.fromEntries(
     ["x", "y", "width", "height"].map((k) => [
@@ -731,13 +914,13 @@ ipcMain.handle("save-report", (_, report) => {
   const oldIndex = data.reports.findIndex((r) => r.id === report.id);
   const old = oldIndex >= 0 ? data.reports[oldIndex] : null;
   if (old && activeUser !== "Administrateur") {
-    const created = Date.parse(old.createdAt || 0);
+    const created = Date.parse(old.createdAt || "");
     if (
-      created &&
+      !Number.isFinite(created) ||
       Date.now() - created > REPORT_EDIT_WINDOW_HOURS * 60 * 60 * 1000
     )
       throw new Error(
-        `Modification impossible : le délai de ${REPORT_EDIT_WINDOW_HOURS} heures après la création de ce rapport est dépassé. Contactez l’administrateur si une correction est nécessaire.`,
+        `Modification impossible : le délai de ${REPORT_EDIT_WINDOW_HOURS} heures après la création de ce rapport est dépassé ou indisponible. Contactez l’administrateur si une correction est nécessaire.`,
       );
   }
   report.createdAt = old?.createdAt || new Date().toISOString();
@@ -787,11 +970,20 @@ function createWindow() {
   });
   win.loadFile(path.join(__dirname, "index.html"));
 }
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  if (!hasSingleInstanceLock) return;
   Menu.setApplicationMenu(null);
-  load();
-  backupDaily();
-  createWindow();
+  try {
+    await load();
+    backupDaily();
+    createWindow();
+  } catch (error) {
+    dialog.showErrorBox(
+      "Base SQLCipher inaccessible",
+      `Impossible d’ouvrir la base JavaScript : ${error.message}`,
+    );
+    app.quit();
+  }
 });
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

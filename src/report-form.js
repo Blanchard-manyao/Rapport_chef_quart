@@ -199,7 +199,7 @@
     document.body.insertAdjacentHTML(
       "beforeend",
       `<div class="modal report-modal"><section class="panel report-editor">
-        <h2>${existing ? "Rapport de quart" : "Nouveau rapport de quart"}</h2>
+        <h2>${existing ? "Modifier le rapport de quart" : "Nouveau rapport de quart"}</h2>
         <form class="report-form">
           <div class="form-context formgrid">
             ${input("Date", "date", report.date, "date", "required")}
@@ -224,8 +224,8 @@
           </div>
           ${suggestionLists}
           <div class="actions report-actions">
-            <button type="button" id="saveReport">Enregistrer le rapport</button>
-            <button type="button" class="secondary cancel">Annuler</button>
+            <button type="button" id="saveReport">${existing ? "Enregistrer les modifications" : "Enregistrer le rapport"}</button>
+            <button type="button" class="secondary cancel">Fermer</button>
           </div>
         </form>
       </section></div>`,
@@ -322,9 +322,33 @@
         event.target.closest(".stop-row").remove();
         refreshPreview();
       }
-      if (event.target.matches(".cancel")) modal.remove();
+      if (event.target.matches(".cancel")) confirmCloseReport();
     });
 
+    // Demande confirmation avant de perdre une saisie non enregistrée.
+    function confirmCloseReport() {
+      if (document.querySelector(".report-close-confirm")) return;
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="modal report-close-confirm" role="alertdialog" aria-modal="true" aria-labelledby="closeReportTitle">
+          <section class="panel">
+            <h2 id="closeReportTitle">Fermer le rapport ?</h2>
+            <p>Les modifications non enregistrées seront perdues. Veux-tu vraiment fermer la saisie ?</p>
+            <div class="actions">
+              <button type="button" class="secondary continue-report">Continuer la saisie</button>
+              <button type="button" class="discard-report">Fermer sans enregistrer</button>
+            </div>
+          </section>
+        </div>`,
+      );
+      const confirmation = document.querySelector(".report-close-confirm");
+      confirmation.querySelector(".continue-report").onclick = () => confirmation.remove();
+      confirmation.querySelector(".discard-report").onclick = () => {
+        confirmation.remove();
+        modal.remove();
+      };
+      confirmation.querySelector(".continue-report").focus();
+    }
     // Met à jour les durées et le texte du rapport à partir des champs visibles.
     function refreshPreview() {
       const current = collect(form, report);
