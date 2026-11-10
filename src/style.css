@@ -86,6 +86,35 @@ button.danger {
   border-left: 1px solid #ffffff55;
   padding-left: 18px;
 }
+.period-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 2px 8px 5px;
+  border: 1px solid #ffffff55;
+  border-radius: 6px;
+}
+.period-filter legend {
+  padding: 0 4px;
+  font-size: 12px;
+}
+.period-filter label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.period-filter input[type="date"] {
+  min-width: 130px;
+  padding: 5px;
+}
+.login-actions {
+  align-items: center;
+}
+.login-actions button {
+  min-height: 42px;
+}
 .content {
   padding: 24px;
   max-width: 1500px;
@@ -245,6 +274,23 @@ tr:hover td {
   overflow: auto;
 }
 @media (max-width: 1000px) {
+  .top {
+    flex: 0 0 auto;
+    min-height: 70px;
+    height: auto;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 14px;
+  }
+  .top .filters {
+    flex-wrap: wrap;
+    border-left: 0;
+    padding-left: 0;
+  }
+  .period-filter {
+    flex-wrap: wrap;
+  }
   .shell {
     grid-template-columns: 180px 1fr;
   }
@@ -552,7 +598,7 @@ body {
 }
 .content:has(.cards) {
   display: grid;
-  grid-template-rows: minmax(72px, auto) minmax(220px, 1.1fr) minmax(130px, 0.9fr);
+  grid-template-rows: minmax(72px, auto) minmax(170px, 0.9fr) minmax(230px, 1.1fr);
   gap: 12px;
   overflow: hidden;
   padding: 12px 18px;
@@ -560,10 +606,13 @@ body {
 .content:has(.cards) > .cards {
   margin: 0;
 }
-.content:has(.cards) > .grid2,
-.content:has(.cards) > .home-zones {
+.content:has(.cards) > .home-summary,
+.content:has(.cards) > .home-trend {
   min-height: 0;
   margin-top: 0 !important;
+}
+.content:has(.cards) > .home-summary {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 .content:has(.cards) > .home-trend {
   display: flex;
@@ -589,15 +638,20 @@ body {
   gap: 10px;
 }
 .content:has(.cards) .zone-grid {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
-.content:has(.cards) .home-zones {
+.content:has(.cards) .home-zones,
+.content:has(.cards) .home-pie {
   display: flex;
   flex-direction: column;
 }
 .content:has(.cards) .home-zones .zone-grid {
   min-height: 0;
   flex: 1;
+}
+.content:has(.cards) .home-summary > .panel,
+.content:has(.cards) > .home-trend {
+  min-height: 0;
 }
 .content:has(.cards) .zone-card {
   justify-content: center;
@@ -652,6 +706,60 @@ body {
   padding: 10px;
   overflow: hidden;
   border-radius: 12px;
+}
+.synthesis-modal {
+  z-index: 12;
+  padding: 12px;
+}
+.synthesis-modal .synthesis-drawer {
+  position: relative;
+  inset: auto;
+  width: min(900px, 96vw);
+  height: min(900px, calc(100dvh - 24px));
+  max-height: calc(100dvh - 24px);
+  transform: none;
+  margin: 0;
+  overflow: hidden;
+}
+.synthesis-modal .synthesis-table-wrap {
+  overflow: auto;
+}
+.synthesis-modal .synthesis-actions {
+  flex: 0 0 auto;
+}
+@media (max-width: 1000px) {
+  .top {
+    flex: 0 0 auto;
+    height: auto;
+    min-height: 70px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 14px;
+  }
+  .top .filters {
+    flex-wrap: wrap;
+    border-left: 0;
+    padding-left: 0;
+  }
+  .period-filter {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 760px) {
+  .content:has(.cards) {
+    grid-template-rows: auto auto minmax(250px, auto);
+    overflow: auto;
+  }
+  .content:has(.cards) > .home-summary {
+    grid-template-columns: 1fr;
+  }
+  .content:has(.cards) .home-zones .zone-grid {
+    flex: 0 0 auto;
+  }
+  .period-filter input[type="date"] {
+    min-width: 118px;
+  }
 }
 .synthesis-capture {
   width: 100%;
@@ -746,7 +854,7 @@ body {
 }
 @media (max-height: 760px) {
   .content:has(.cards) {
-    grid-template-rows: minmax(62px, auto) minmax(180px, 1.2fr) minmax(120px, 0.8fr);
+    grid-template-rows: minmax(62px, auto) minmax(180px, 0.9fr) minmax(210px, 1.1fr);
     gap: 8px;
     padding-block: 8px;
   }
@@ -759,6 +867,11 @@ body {
   }
   .synthesis-info {
     min-height: 28px;
+  }
+}
+@media (max-width: 1000px) and (min-width: 761px) {
+  .content:has(.cards) > .home-summary {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
 .report-editor {

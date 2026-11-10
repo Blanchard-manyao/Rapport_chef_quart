@@ -278,6 +278,9 @@ function focusMainWindow() {
       if (!win || win.isDestroyed()) return false;
       if (win.isMinimized()) win.restore();
       if (!win.isVisible()) win.show();
+      try {
+        app.focus({ steal: true });
+      } catch {}
       win.focus();
       win.webContents.focus();
       return true;
@@ -286,7 +289,7 @@ function focusMainWindow() {
     if (!focus()) return resolve(false);
     // Windows can deliver the logout IPC response while the prior page is
     // still relinquishing keyboard focus. Refocus after that transition.
-    setTimeout(() => resolve(focus()), 150);
+    setTimeout(() => resolve(focus()), 220);
   });
 }
 ipcMain.handle("logout", async () => {

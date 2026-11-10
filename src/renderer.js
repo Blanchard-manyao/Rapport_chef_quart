@@ -10,13 +10,14 @@ const state = {
   tab: "home",
   month: new Date().toISOString().slice(0, 7),
   day: "",
+  periodStart: "",
+  periodEnd: "",
   secure: false,
   legacyAvailable: false,
   legacyConnected: false,
   legacyPrompted: false,
   refreshTimer: null,
   sessionVersion: 0,
-  chartMode: "day",
   selectedStopsReportId: null,
   selectedStopsTarget: null,
 };
@@ -74,22 +75,31 @@ async function reload(expectedVersion = state.sessionVersion) {
   return true;
 }
 function login(refocusAfterSession = false) {
-  app.innerHTML = `<main class="login panel"> 
-  <h1>Rapport Chef de Quart</h1>
-  <p class="muted"> Connexion </p>
-  <form id="loginForm"> 
-  <label class="field"> Profil <select name="user"> 
-  <option value="A">Équipe A — ${esc(D.TEAMS.A)}</option>
-  <option value="B">Équipe B — ${esc(D.TEAMS.B)}</option>
-  <option value="C">Équipe C — ${esc(D.TEAMS.C)}</option>
-  <option value="D">Équipe D — ${esc(D.TEAMS.D)}</option>
-  <option value="Administrateur">Administrateur</option>
-  </select> </label> <label class="field">Mot de passe<input name="password" type="password" required maxlength="64"></label>
-  <label class="field" id="confirmWrap"> confirmer le mot de passe<input name="confirmation" type="password" maxlength="64">
-  <p class="muted" id="loginMessage"> </p>
-  <div class="actions"> <button type="submit">Se connecter</button>
-  <button type="button" id="forgot" class="secondary"> Mot de passe oublié ? </button> </div>
-  </form> 
+  app.innerHTML = `<main class="login panel">
+    <h1>Rapport Chef de Quart</h1>
+    <p class="muted">Connexion</p>
+    <form id="loginForm">
+      <label class="field">Profil
+        <select name="user">
+          <option value="A">Équipe A — ${esc(D.TEAMS.A)}</option>
+          <option value="B">Équipe B — ${esc(D.TEAMS.B)}</option>
+          <option value="C">Équipe C — ${esc(D.TEAMS.C)}</option>
+          <option value="D">Équipe D — ${esc(D.TEAMS.D)}</option>
+          <option value="Administrateur">Administrateur</option>
+        </select>
+      </label>
+      <label class="field">Mot de passe
+        <input name="password" type="password" required maxlength="64" autocomplete="current-password">
+      </label>
+      <label class="field" id="confirmWrap">Confirmer le mot de passe
+        <input name="confirmation" type="password" maxlength="64" autocomplete="new-password">
+      </label>
+      <p class="muted" id="loginMessage"></p>
+      <div class="actions login-actions">
+        <button type="submit">Se connecter</button>
+        <button type="button" id="forgot" class="secondary">Mot de passe oublié ?</button>
+      </div>
+    </form>
   </main>`;
   const form = $("#loginForm"),
     user = form.elements.user;
@@ -97,7 +107,10 @@ function login(refocusAfterSession = false) {
     const admin = user.value === "Administrateur",
       exists = state.users.includes(user.value);
     $("#confirmWrap").classList.toggle("hidden", exists);
-    $("#confirmWrap").querySelector("input").required = !exists;
+    const confirmation = $("#confirmWrap").querySelector("input");
+    confirmation.required = !exists;
+    confirmation.disabled = exists;
+    if (exists) confirmation.value = "";
     $("#loginMessage").textContent = admin
       ? state.adminSet
         ? "Connectez-vous pour ouvrir le tableau de bord administrateur."
@@ -119,7 +132,10 @@ function login(refocusAfterSession = false) {
       });
   };
   requestAnimationFrame(focusPassword);
-  if (refocusAfterSession) setTimeout(focusPassword, 180);
+  if (refocusAfterSession) {
+    setTimeout(focusPassword, 180);
+    setTimeout(focusPassword, 420);
+  }
   form.onsubmit = async (e) => {
     e.preventDefault();
     const sessionVersion = ++state.sessionVersion;
@@ -226,18 +242,19 @@ function resetPasswordDialog(user) {
   };
 }
 function shell() {
+  const rangeActive = Boolean(state.periodStart || state.periodEnd);
   const tabs = state.admin
     ? [
         ["home", "Tableau de bord"],
         ["reports", "Rapports enregistrés"],
         ["stops", "Temps d’arrêt par zone"],
-        ["audit", "Journal de modification"],
       ]
     : [
         ["create", "Créer un rapport"],
         ["history", "Historique"],
       ];
-  const count = new Date(state.month + "-01T00:00:00").getDate(),
+  const [year, month] = state.month.split("-").map(Number),
+    count = Number.isFinite(year) && month ? new Date(year, month, 0).getDate() : 31,
     showFilters = state.admin || state.tab === "history";
   const titles = {
     home: "Tableau de bord",
@@ -245,14 +262,13 @@ function shell() {
     reports: "Rapports enregistrés",
     history: "Historique",
     stops: "Temps d’arrêt par zone",
-    audit: "Journal de modification",
   };
   const teamActions = state.admin
     ? ""
     : '<button id="changeTeam" class="secondary">Changer d’équipe</button>';
   return `<div class="shell"><aside class="side"><div class="brand">USINE MISSEHI<br><small>Rapport de quart</small></div>${tabs.map(([k, t]) => `<button data-tab="${k}" class="${state.tab === k ? "active" : ""}">${t}</button>`).join("")}${teamActions}<button id="password" class="secondary">Changer le mot de passe</button><button id="logout" class="logout">Déconnexion</button></aside><section class="main"><header class="top"><h1>${titles[state.tab]}</h1>${
     showFilters
-      ? `<div class="filters"><label>Mois <input id="month" type="month" value="${state.month}"></label><label>Jour <select id="day"><option value="">Tous les jours</option>${Array.from(
+      ? `<div class="filters"><label>Mois <input id="month" type="month" value="${state.month}" ${rangeActive ? "disabled" : ""}></label><label>Jour <select id="day" ${rangeActive ? "disabled" : ""}><option value="">Tous les jours</option>${Array.from(
           { length: count },
           (_, i) => String(i + 1).padStart(2, "0"),
         )
@@ -262,7 +278,7 @@ function shell() {
           )
           .join(
             "",
-          )}</select></label>${state.admin ? `<label>Évolution <select id="chartMode"><option value="day" ${state.chartMode === "day" ? "selected" : ""}>Par jour</option><option value="month" ${state.chartMode === "month" ? "selected" : ""}>Par mois</option></select></label>` : ""}<button id="refresh" class="secondary">Actualiser</button></div>`
+          )}</select></label>${state.admin ? `<fieldset class="period-filter"><legend>Période</legend><label>Du <input id="periodStart" type="date" value="${state.periodStart}"></label><label>Au <input id="periodEnd" type="date" value="${state.periodEnd}"></label>${rangeActive ? '<button type="button" id="clearPeriod" class="secondary">Effacer</button>' : ""}</fieldset>` : ""}<button id="refresh" class="secondary">Actualiser</button></div>`
       : ""
   }</header><main class="content" id="view"></main></section></div>`;
 }
@@ -280,19 +296,6 @@ function render() {
     await closeSession();
   };
   $("#password").onclick = passwordDialog;
-  if (state.admin && $("#backup"))
-    $("#backup").onclick = async () => {
-      try {
-        if (await cq.exportBackup()) toast("Sauvegarde exportée.");
-      } catch (e) {
-        alert(e.message);
-      }
-    };
-  if ($("#chartMode"))
-    $("#chartMode").onchange = (e) => {
-      state.chartMode = e.target.value;
-      render();
-    };
   if (!state.admin)
     $("#changeTeam").onclick = async () => {
       if (!window.confirm("Voulez-vous vous déconnecter pour changer d’équipe ?"))
@@ -315,6 +318,26 @@ function render() {
       state.day = e.target.value;
       render();
     };
+  if ($("#periodStart"))
+    $("#periodStart").onchange = (e) => {
+      state.periodStart = e.target.value;
+      if (state.periodEnd && state.periodStart > state.periodEnd)
+        state.periodEnd = state.periodStart;
+      render();
+    };
+  if ($("#periodEnd"))
+    $("#periodEnd").onchange = (e) => {
+      state.periodEnd = e.target.value;
+      if (state.periodStart && state.periodEnd < state.periodStart)
+        state.periodStart = state.periodEnd;
+      render();
+    };
+  if ($("#clearPeriod"))
+    $("#clearPeriod").onclick = () => {
+      state.periodStart = "";
+      state.periodEnd = "";
+      render();
+    };
   const view = $("#view");
   (
     ({
@@ -323,7 +346,6 @@ function render() {
       reports: reportsView,
       history: historyView,
       stops: stopsView,
-      audit: auditView,
     })[state.tab] || createView
   )(view);
   if (state.selectedStopsReportId && state.selectedStopsTarget) {
@@ -340,11 +362,17 @@ async function closeSession() {
   state.tab = "home";
   state.reports = [];
   state.audit = [];
+  state.periodStart = "";
+  state.periodEnd = "";
   window.CQUser = null;
   document.querySelectorAll(".modal, .synthesis-drawer, .row-menu").forEach((el) => el.remove());
-  await cq.logout();
-  if (sessionVersion !== state.sessionVersion) return;
-  login(true);
+  try {
+    await cq.logout();
+  } catch (error) {
+    console.error("Fermeture de session interrompue :", error);
+  } finally {
+    if (sessionVersion === state.sessionVersion) login(true);
+  }
 }
 function passwordDialog() {
   document.body.insertAdjacentHTML(
@@ -373,11 +401,15 @@ function passwordDialog() {
   };
 }
 function period() {
-  return state.reports.filter(
-    (r) =>
-      String(r.date || "").startsWith(state.month) &&
-      (!state.day || String(r.date).slice(8, 10) === state.day),
-  );
+  const ranged = Boolean(state.periodStart || state.periodEnd);
+  return state.reports.filter((r) => {
+    const date = String(r.date || "");
+    if (ranged)
+      return (!state.periodStart || date >= state.periodStart) &&
+        (!state.periodEnd || date <= state.periodEnd);
+    return date.startsWith(state.month) &&
+      (!state.day || date.slice(8, 10) === state.day);
+  });
 }
 function stopsOf(r) {
   return [
@@ -468,7 +500,7 @@ function productionCurve(reports, mode = "day") {
   const labels = dates
     .map(
       (date, index) =>
-        `<text class="chart-date" x="${xAt(index)}" y="244" text-anchor="middle">${mode === "month" ? new Date(`${date}-01T00:00:00`).toLocaleDateString("fr-FR", { month: "short" }) : date.slice(8, 10)}</text>`,
+        `<text class="chart-date" x="${xAt(index)}" y="244" text-anchor="middle">${mode === "month" ? new Date(`${date}-01T00:00:00`).toLocaleDateString("fr-FR", { month: "short", year: "2-digit" }) : date.slice(8, 10)}</text>`,
     )
     .join("");
   const legend = teams
@@ -503,39 +535,50 @@ function home(el) {
     zones = STOP_ZONES.map((zone) => ({
       name: zone,
       minutes: sum(st.filter((stop) => stop.zone === zone).map((stop) => stop.minutes)),
-    }));
-
-  const cols = ["#2563eb", "#16a34a", "#f59e0b", "#9333ea"];
-  const totals = Object.keys(D.TEAMS).map((t) =>
-    sum(rs.filter((r) => r.team === t).map((r) => r.production?.parcels)),
-  );
+    })),
+    colors = ["#2563eb", "#16a34a", "#f59e0b", "#9333ea"],
+    teams = Object.keys(D.TEAMS),
+    totals = teams.map((team) =>
+      sum(rs.filter((r) => r.team === team).map((r) => r.production?.parcels)),
+    );
   let angle = 0;
   const slices = totals
-    .map((n, i) => {
-      const a = angle;
-      angle += sum(totals) ? (n / sum(totals)) * 360 : 0;
-      return `${cols[i]} ${a}deg ${angle}deg`;
+    .map((value, index) => {
+      const start = angle;
+      angle += sum(totals) ? (value / sum(totals)) * 360 : 0;
+      return `${colors[index]} ${start}deg ${angle}deg`;
     })
     .join(",");
-  const chartReports =
-    state.chartMode === "month"
-      ? state.reports.filter((r) => String(r.date || "").startsWith(state.month.slice(0, 4)))
-      : state.reports.filter((r) => String(r.date || "").startsWith(state.month));
-  el.innerHTML = `<div class="cards"><div class="card">Rapports enregistrés<b>${rs.length}</b></div><div class="card">Production de la période<b>${prod.toLocaleString("fr-FR")} colis</b></div></div><div class="grid2"><section class="panel home-trend"><h2>Évolution de la production par équipe</h2>${productionCurve(chartReports, state.chartMode)}</section><section class="panel"><h2>Répartition de la production par équipe</h2><div class="pie-layout"><div class="pie" style="background:conic-gradient(${slices || "#dbe5ef 0deg 360deg"})"></div><div>${Object.keys(
-    D.TEAMS,
-  )
-    .map(
-      (t, i) =>
-        `<div class="zone-row"><span><i class="dot" style="background:${cols[i]}"></i>Équipe ${t}</span><b>${totals[i].toLocaleString("fr-FR")} colis</b></div>`,
-    )
-    .join(
-      "",
-    )}</div></div></section></div><section class="panel home-zones"><h2>Temps d’arrêt par zone</h2><div class="zone-grid">${zones
-    .map(
-      ({ name, minutes }) =>
+
+  const chartMonths = new Set(rs.map((r) => String(r.date || "").slice(0, 7)).filter(Boolean)),
+    chartMode = chartMonths.size > 1 ? "month" : "day",
+    chartTitle = chartMode === "month" ? "par mois" : "par jour";
+
+  el.innerHTML = `<div class="cards">
+    <div class="card">Rapports enregistrés<b>${rs.length}</b></div>
+    <div class="card">Production de la période<b>${prod.toLocaleString("fr-FR")} colis</b></div>
+  </div>
+  <div class="grid2 home-summary">
+    <section class="panel home-zones">
+      <h2>Temps d’arrêt par zone</h2>
+      <div class="zone-grid">${zones.map(({ name, minutes }) =>
         `<article class="zone-card"><span>${esc(name)}</span><b>${D.durationText(minutes)}</b></article>`,
-    )
-    .join("")}</div></section>`;
+      ).join("")}</div>
+    </section>
+    <section class="panel home-pie">
+      <h2>Répartition de la production par équipe</h2>
+      <div class="pie-layout">
+        <div class="pie" style="background:conic-gradient(${slices || "#dbe5ef 0deg 360deg"})"></div>
+        <div>${teams.map((team, index) =>
+          `<div class="zone-row"><span><i class="dot" style="background:${colors[index]}"></i>Équipe ${team}</span><b>${totals[index].toLocaleString("fr-FR")} colis</b></div>`,
+        ).join("")}</div>
+      </div>
+    </section>
+  </div>
+  <section class="panel home-trend">
+    <h2>Évolution de la production par équipe — ${chartTitle}</h2>
+    ${productionCurve(rs, chartMode)}
+  </section>`;
 }
 function createView(el) {
   el.innerHTML = `<section class="panel"><h2>Nouveau rapport de quart</h2><p class="muted">Créez ou complétez le rapport de votre équipe. Les rapports enregistrés restent consultables dans l’historique.</p><button id="startReport">Créer un rapport</button></section>`;
@@ -745,20 +788,41 @@ function synthesis(id) {
   if (!r) return;
   const current = document.querySelector(".synthesis-drawer");
   if (current?.dataset.report === id) {
-    current.remove();
+    current.closest(".synthesis-modal")?.remove();
     return;
   }
   const rows = D.synthesisRows(r);
-  current?.remove();
+  current?.closest(".synthesis-modal")?.remove();
   document.body.insertAdjacentHTML(
     "beforeend",
-    `<section class="synthesis-drawer panel" data-report="${esc(id)}"><h2><span>Synthèse de la production du quart</span><button type="button" class="secondary close-synthesis" aria-label="Fermer la synthèse">Fermer</button></h2><p>${dateFmt(r.date)} · ${esc(r.shift)} · Équipe ${esc(r.team)} — ${esc(D.TEAMS[r.team])}</p><div class="synthesis-grid">${rows.map(([k, v]) => `<div class="zone-row"><span>${esc(k)}</span><b>${v == null ? "—" : typeof v === "number" ? v.toLocaleString("fr-FR") : esc(v)}</b></div>`).join("")}</div>${state.admin ? '<div class="actions"><button id="captureSynthesis" class="secondary">Capturer le tableau</button><button id="openCaptures" class="secondary">Ouvrir le dossier</button></div>' : ""}</section>`,
+    `<div class="modal synthesis-modal"><section class="synthesis-drawer panel" data-report="${esc(id)}">
+      <div class="synthesis-capture" id="synthesisCapture">
+        <div class="synthesis-title"><h2>Synthèse de la production du quart</h2></div>
+        <p class="synthesis-info">${dateFmt(r.date)} · ${esc(r.shift)} · Équipe ${esc(r.team)} — ${esc(D.TEAMS[r.team])}</p>
+        <div class="synthesis-table-wrap"><table class="synthesis-table">
+          <thead><tr><th>Information</th><th>Valeur</th></tr></thead>
+          <tbody>${rows.map((row) => {
+            const value = row.value == null || row.value === ""
+              ? "—"
+              : typeof row.value === "number"
+                ? row.value.toLocaleString("fr-FR")
+                : row.value;
+            const tone = row.tone ? `tone-${esc(row.tone)}` : "";
+            return `<tr class="${tone}"><td>${esc(row.label)}</td><td class="${row.highlight ? "highlight" : ""}">${esc(value)}</td></tr>`;
+          }).join("")}</tbody>
+        </table></div>
+      </div>
+      <div class="synthesis-actions">
+        ${state.admin ? '<button id="captureSynthesis" class="secondary">Capturer le tableau</button><button id="openCaptures" class="secondary">Ouvrir le dossier de capture</button>' : ""}
+        <button type="button" class="secondary close-synthesis">Fermer</button>
+      </div>
+    </section></div>`,
   );
   $(".close-synthesis").onclick = () =>
-    document.querySelector(".synthesis-drawer")?.remove();
+    document.querySelector(".synthesis-modal")?.remove();
   if (state.admin) {
     $("#captureSynthesis").onclick = async () => {
-      const node = document.querySelector(".synthesis-drawer"),
+      const node = document.querySelector("#synthesisCapture"),
         b = node.getBoundingClientRect();
       try {
         const file = await cq.captureSynthesis({
@@ -766,6 +830,8 @@ function synthesis(id) {
           y: b.y,
           width: b.width,
           height: b.height,
+          reportId: id,
+          name: `Synthese_${r.date}_${r.shift.replaceAll("/", "-")}_Equipe-${r.team}.png`,
         });
         toast(`Capture enregistrée : ${file}`);
       } catch (e) {
