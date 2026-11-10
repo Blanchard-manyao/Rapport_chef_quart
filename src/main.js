@@ -11,6 +11,7 @@ const {
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+// Processus principal Electron : fenêtre, accès aux données et règles serveur.
 let win;
 let activeUser = null;
 const REPORT_EDIT_WINDOW_HOURS = 8;
@@ -34,7 +35,7 @@ function log(level, message) {
     );
   } catch {}
 }
-let data = { users: {}, reports: [], audit: [] };
+let data = { users: {}, reports: [] };
 function load() {
   try {
     const raw = fs.readFileSync(file());
@@ -43,11 +44,10 @@ function load() {
       : raw.toString("utf8");
     data = JSON.parse(text);
   } catch {
-    data = { users: {}, reports: [], audit: [] };
+    data = { users: {}, reports: [] };
   }
   data.users ||= {};
   data.reports ||= [];
-  data.audit ||= [];
   data.loginAttempts ||= {};
   if (!data.recoveryKey) {
     data.recoveryKey = crypto.randomBytes(20).toString("hex").toUpperCase();
@@ -61,7 +61,76 @@ function save() {
   const bytes = safeStorage.isEncryptionAvailable()
     ? safeStorage.encryptString(text)
     : Buffer.from(text);
-  fs.writeFileSync(file(), bytes);
+  const target = file(),
+    temporary = `${target}.${process.pid}.tmp`;
+  try {
+    // Le fichier temporaire évite qu’une autre instance lise une écriture incomplète.
+    fs.writeFileSync(temporary, bytes);
+    fs.renameSync(temporary, target);
+  } finally {
+    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+  }
+}
+// Recharge le fichier partagé sans perdre la dernière copie valide en mémoire.
+function refreshSharedData() {
+  try {
+    const raw = fs.readFileSync(file()),
+      text = safeStorage.isEncryptionAvailable()
+        ? safeStorage.decryptString(raw)
+        : raw.toString("utf8"),
+      latest = JSON.parse(text);
+    if (!latest || !latest.users || !Array.isArray(latest.reports)) return false;
+    latest.loginAttempts ||= {};
+    data = latest;
+    return true;
+  } catch {
+    // Une autre instance peut être en train d’écrire le fichier ; on garde
+    // la dernière copie valide et on réessaie au prochain rafraîchissement.
+    return false;
+  }
+}
+function clockMinutes(value) {
+  const match = String(value ?? "")
+    .trim()
+    .match(/^(\d{1,2})\s*[:hH.]\s*(\d{0,2})$/);
+  if (!match) return null;
+  const hour = Number(match[1]),
+    minute = Number(match[2] || 0);
+  return hour <= 23 && minute <= 59 ? hour * 60 + minute : null;
+}
+// Vérifie l’ordre des heures côté serveur, même si l’interface est contournée.
+function validateReportTimeRanges(report) {
+  const intervals = [
+    ...(report.stops || []).map((stop) => ({
+      ...stop,
+      label: `l’arrêt ${stop.zone || ""}`,
+    })),
+    ...(report.drying?.dryers || []).flatMap((dryer) =>
+      (dryer.stops || []).map((stop) => ({
+        ...stop,
+        label: `l’arrêt du séchoir ${dryer.number}`,
+      })),
+    ),
+    ...Object.entries(report.generators || {}).flatMap(([name, periods]) =>
+      (periods || []).map((period) => ({
+        ...period,
+        label: `la période du ${name}`,
+      })),
+    ),
+  ];
+  for (const interval of intervals) {
+    if (!interval.start && !interval.end) continue;
+    const start = clockMinutes(interval.start),
+      end = clockMinutes(interval.end);
+    if (start === null || end === null)
+      throw new Error(
+        `Heure invalide pour ${interval.label}. Saisissez une heure comme 07H30.`,
+      );
+    if (end <= start)
+      throw new Error(
+        `L’heure de fin doit être supérieure à l’heure de début pour ${interval.label}.`,
+      );
+  }
 }
 function legacyHash(p) {
   return crypto.scryptSync(p, "rapport-cq-js-v1", 64).toString("hex");
@@ -98,15 +167,6 @@ function verifyPassword(stored, p) {
       crypto.timingSafeEqual(expected, actual),
   };
 }
-function audit(action, id = "", previous = null) {
-  data.audit.unshift({
-    at: new Date().toISOString(),
-    user: activeUser || "Inconnu",
-    action,
-    id,
-    detail: previous ? JSON.stringify(previous) : "",
-  });
-}
 function backupDaily() {
   if (!fs.existsSync(file())) return;
   const dir = path.join(app.getPath("userData"), "Sauvegardes");
@@ -122,6 +182,8 @@ function backupDaily() {
   files.slice(30).forEach((n) => fs.unlinkSync(n));
 }
 ipcMain.handle("bootstrap", () => {
+  // Chaque actualisation relit les changements enregistrés par les autres fenêtres.
+  refreshSharedData();
   const admin = activeUser === "Administrateur",
     logged = !!activeUser;
   return {
@@ -133,8 +195,6 @@ ipcMain.handle("bootstrap", () => {
       D: "TIA LOU EDWIGE",
     },
     reports: logged ? data.reports : [],
-    audit: admin ? data.audit : [],
-    secure: safeStorage.isEncryptionAvailable(),
     adminSet: !!data.users.Administrateur,
     recoveryKey: data.recoveryAcknowledged ? null : data.recoveryKey,
     recoveryKeyForSetup: data.users.Administrateur ? null : data.recoveryKey,
@@ -267,7 +327,6 @@ ipcMain.handle(
       throw new Error("Le mot de passe doit contenir de 6 à 64 caractères.");
     data.users[user] = makePassword(next);
     data.loginAttempts[user] = { count: 0, until: 0 };
-    audit("REINITIALISATION_MOT_DE_PASSE", user);
     save();
     return true;
   },
@@ -287,8 +346,8 @@ function focusMainWindow() {
     };
 
     if (!focus()) return resolve(false);
-    // Windows can deliver the logout IPC response while the prior page is
-    // still relinquishing keyboard focus. Refocus after that transition.
+    // Windows peut répondre avant que l’ancien champ ait libéré le clavier ;
+    // on reprend le focus après cette transition.
     setTimeout(() => resolve(focus()), 220);
   });
 }
@@ -312,20 +371,7 @@ ipcMain.handle("change-password", (_, { current, next }) => {
       `Le nouveau mot de passe doit contenir de ${minimum} à 64 caractères.`,
     );
   data.users[activeUser] = makePassword(next);
-  audit("CHANGEMENT_MOT_DE_PASSE");
   save();
-  return true;
-});
-ipcMain.handle("export-backup", async () => {
-  if (activeUser !== "Administrateur")
-    throw new Error("Action réservée à l’administrateur.");
-  save();
-  const { canceled, filePath } = await dialog.showSaveDialog(win, {
-    defaultPath: `rapport-cq-${new Date().toISOString().slice(0, 10)}.dat`,
-    filters: [{ name: "Sauvegarde Rapport CQ", extensions: ["dat"] }],
-  });
-  if (canceled) return false;
-  fs.copyFileSync(file(), filePath);
   return true;
 });
 ipcMain.handle("capture-synthesis", async (_, rect) => {
@@ -615,32 +661,6 @@ ipcMain.handle("import-legacy-db", async (_, options = {}) => {
     data.reports.push(r);
     imported++;
   }
-  for (const a of table("journal_audit")) {
-    const at = a.horodatage;
-    if (!at) continue;
-    let stamp;
-    try {
-      stamp = new Date(at).toISOString();
-    } catch {
-      stamp = new Date().toISOString();
-    }
-    const entry = {
-      at: stamp,
-      user: a.machine
-        ? `${a.utilisateur || "Ancien journal"}@${a.machine}`
-        : a.utilisateur || "Ancien journal",
-      action: a.action || "MODIFICATION",
-      id: a.rapport_id || "",
-      detail: a.ancien_contenu || "",
-    };
-    const key = JSON.stringify([entry.at, entry.user, entry.action, entry.id]);
-    if (
-      !data.audit.some(
-        (v) => JSON.stringify([v.at, v.user, v.action, v.id]) === key,
-      )
-    )
-      data.audit.push(entry);
-  }
   const safeSql = (sql) => {
     try {
       return sqlRows(sql);
@@ -678,13 +698,6 @@ ipcMain.handle("import-legacy-db", async (_, options = {}) => {
         : 0,
     };
   legacy.close();
-  data.audit.unshift({
-    at: new Date().toISOString(),
-    user: activeUser,
-    action: "IMPORT_BASE_C#",
-    id: picked.filePaths[0].split(/[\\/]/).pop(),
-    detail: `${imported} rapport(s) importé(s)`,
-  });
   if (automatic) data.legacyConnected = true;
   save();
   log("INFO", `${imported} rapport(s) importé(s) depuis une sauvegarde C#`);
@@ -696,8 +709,11 @@ ipcMain.handle("save-report", (_, report) => {
     throw new Error(
       "Seuls les utilisateurs d’équipe peuvent créer des rapports.",
     );
+  // Vérifie les doublons contre la dernière version partagée des données.
+  refreshSharedData();
   if (!report.date || !report.shift || !report.team)
     throw new Error("Date, quart et équipe obligatoires.");
+  validateReportTimeRanges(report);
   if ((report.drying?.dryers || []).some((dryer) => [dryer.burner1, dryer.burner2].some((value) => Number(value) < 0 || Number(value) > 130)))
     throw new Error("Les valeurs des brûleurs doivent être comprises entre 0 et 130.");
   if (activeUser !== "Administrateur" && activeUser !== report.team)
@@ -705,6 +721,13 @@ ipcMain.handle("save-report", (_, report) => {
       "Vous ne pouvez enregistrer que les rapports de votre équipe.",
     );
   report.id = `${report.date}_${report.shift}_${report.team}`;
+  const sameSlot = data.reports.find(
+    (saved) => saved.date === report.date && saved.shift === report.shift && saved.id !== report.id,
+  );
+  if (sameSlot)
+    throw new Error(
+      `Un rapport existe déjà pour cette date et ce quart (équipe ${sameSlot.team}).`,
+    );
   const oldIndex = data.reports.findIndex((r) => r.id === report.id);
   const old = oldIndex >= 0 ? data.reports[oldIndex] : null;
   if (old && activeUser !== "Administrateur") {
@@ -719,10 +742,7 @@ ipcMain.handle("save-report", (_, report) => {
   }
   report.createdAt = old?.createdAt || new Date().toISOString();
   report.updatedAt = new Date().toISOString();
-  if (old) {
-    audit("MODIFICATION", report.id, old);
-    data.reports.splice(oldIndex, 1);
-  } else audit("CREATION", report.id);
+  if (old) data.reports.splice(oldIndex, 1);
   data.reports.push(report);
   save();
   return report;

@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer } = require("electron");
+// API autorisée du navigateur vers le processus principal Electron.
 contextBridge.exposeInMainWorld("cq", {
   bootstrap: () => ipcRenderer.invoke("bootstrap"),
   auth: (x) => ipcRenderer.invoke("auth", x),
@@ -12,5 +13,4 @@ contextBridge.exposeInMainWorld("cq", {
   logout: () => ipcRenderer.invoke("logout"),
   exportXlsx: (x) => ipcRenderer.invoke("export-xlsx", x),
   changePassword: (x) => ipcRenderer.invoke("change-password", x),
-  exportBackup: () => ipcRenderer.invoke("export-backup"),
 });

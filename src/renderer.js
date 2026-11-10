@@ -1,10 +1,9 @@
 "use strict";
+// Interface utilisateur : navigation, filtres, tableaux et graphiques.
 const app = document.querySelector("#app"),
   D = window.CQDomain;
 const state = {
   reports: [],
-  audit: [],
-  teams: D.TEAMS,
   user: null,
   admin: false,
   tab: "home",
@@ -12,7 +11,6 @@ const state = {
   day: "",
   periodStart: "",
   periodEnd: "",
-  secure: false,
   legacyAvailable: false,
   legacyConnected: false,
   legacyPrompted: false,
@@ -36,14 +34,22 @@ const $ = (s, root = document) => root.querySelector(s),
     );
 const dateFmt = (x) =>
   x ? new Date(x + "T00:00:00").toLocaleDateString("fr-FR") : "";
-const fileDate = () => {
-  const now = new Date();
-  return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-};
+// dateFilterToken : traduit le filtre de dates en suffixe lisible pour le fichier exporté.
+function dateFilterToken(exactDate = "") {
+  const compact = (date) => String(date || "").replaceAll("-", "");
+  if (exactDate) return compact(exactDate);
+  if (state.periodStart || state.periodEnd)
+    return `${compact(state.periodStart) || "sans-debut"}_au_${compact(state.periodEnd) || "sans-fin"}`;
+  if (state.month && state.day) return compact(`${state.month}-${state.day}`);
+  if (state.month) return compact(state.month);
+  return "toutes-dates";
+}
 window.addEventListener("focus", () => {
   const password = $("#loginForm input[name='password']");
   if (password && document.activeElement !== password)
     password.focus({ preventScroll: true });
+  if (state.admin && state.tab === "home" && !document.querySelector(".modal"))
+    refreshAdminData();
 });
 const STOP_ZONES = [
   "Séchoir 1",
@@ -64,8 +70,6 @@ async function reload(expectedVersion = state.sessionVersion) {
   const x = await cq.bootstrap();
   if (expectedVersion !== state.sessionVersion) return false;
   state.reports = x.reports || [];
-  state.audit = x.audit || [];
-  state.secure = x.secure;
   state.users = x.users || [];
   state.adminSet = x.adminSet;
   state.recoveryKey = x.recoveryKey;
@@ -73,6 +77,21 @@ async function reload(expectedVersion = state.sessionVersion) {
   state.legacyAvailable = x.legacyAvailable;
   state.legacyConnected = x.legacyConnected;
   return true;
+}
+let refreshInProgress = false;
+// Actualise l’interface admin quand un autre processus a enregistré un rapport.
+async function refreshAdminData() {
+  if (!state.admin || refreshInProgress || document.querySelector(".modal")) return;
+  refreshInProgress = true;
+  const previousReports = JSON.stringify(state.reports);
+  try {
+    await reload();
+    if (state.admin && JSON.stringify(state.reports) !== previousReports) render();
+  } catch (error) {
+    console.error("Actualisation des rapports impossible :", error);
+  } finally {
+    refreshInProgress = false;
+  }
 }
 function login(refocusAfterSession = false) {
   app.innerHTML = `<main class="login panel">
@@ -176,12 +195,7 @@ function login(refocusAfterSession = false) {
       return;
     }
     if (state.admin && !state.refreshTimer)
-      state.refreshTimer = setInterval(async () => {
-        if (!document.querySelector(".modal")) {
-          await reload();
-          render();
-        }
-      }, 10000);
+      state.refreshTimer = setInterval(refreshAdminData, 5000);
     render();
     toast(res.first ? "Mot de passe initialisé." : "Connexion établie.");
     if (
@@ -255,7 +269,7 @@ function shell() {
       ];
   const [year, month] = state.month.split("-").map(Number),
     count = Number.isFinite(year) && month ? new Date(year, month, 0).getDate() : 31,
-    showFilters = state.admin || state.tab === "history";
+    showFilters = state.admin;
   const titles = {
     home: "Tableau de bord",
     create: "Créer un rapport",
@@ -361,7 +375,6 @@ async function closeSession() {
   state.admin = false;
   state.tab = "home";
   state.reports = [];
-  state.audit = [];
   state.periodStart = "";
   state.periodEnd = "";
   window.CQUser = null;
@@ -400,7 +413,9 @@ function passwordDialog() {
     }
   };
 }
+// period : applique les filtres de date et respecte l’historique complet des équipes.
 function period() {
+  if (!state.admin && state.tab === "history") return state.reports;
   const ranged = Boolean(state.periodStart || state.periodEnd);
   return state.reports.filter((r) => {
     const date = String(r.date || "");
@@ -411,6 +426,7 @@ function period() {
       (!state.day || date.slice(8, 10) === state.day);
   });
 }
+// stopsOf : rassemble les arrêts du rapport et ceux de ses trois séchoirs.
 function stopsOf(r) {
   return [
     ...(r.stops || []),
@@ -528,6 +544,7 @@ function bindReportButtons() {
     .querySelectorAll("[data-synthesis]")
     .forEach((b) => (b.onclick = () => synthesis(b.dataset.synthesis)));
 }
+// home : construit les indicateurs, les six zones, le camembert et la courbe.
 function home(el) {
   const rs = period(),
     st = allStops(rs),
@@ -541,14 +558,36 @@ function home(el) {
     totals = teams.map((team) =>
       sum(rs.filter((r) => r.team === team).map((r) => r.production?.parcels)),
     );
+  const productionTotal = sum(totals);
   let angle = 0;
   const slices = totals
     .map((value, index) => {
       const start = angle;
-      angle += sum(totals) ? (value / sum(totals)) * 360 : 0;
+      angle += productionTotal ? (value / productionTotal) * 360 : 0;
       return `${colors[index]} ${start}deg ${angle}deg`;
     })
     .join(",");
+  angle = 0;
+  // Place la lettre de chaque équipe et sa part sur le secteur correspondant.
+  const pieLabels = productionTotal
+    ? teams
+        .map((team, index) => {
+          const sweep = (totals[index] / productionTotal) * 360;
+          const middle = angle + sweep / 2;
+          angle += sweep;
+
+          const radians = (middle - 90) * (Math.PI / 180);
+          const x = 50 + Math.cos(radians) * 28;
+          const y = 50 + Math.sin(radians) * 28;
+          const percent = ((totals[index] / productionTotal) * 100).toLocaleString(
+            "fr-FR",
+            { maximumFractionDigits: 1 },
+          );
+
+          return `<span class="pie-label" style="left:${x}%;top:${y}%">${team}<br>${percent} %</span>`;
+        })
+        .join("")
+    : "";
 
   const chartMonths = new Set(rs.map((r) => String(r.date || "").slice(0, 7)).filter(Boolean)),
     chartMode = chartMonths.size > 1 ? "month" : "day",
@@ -568,10 +607,13 @@ function home(el) {
     <section class="panel home-pie">
       <h2>Répartition de la production par équipe</h2>
       <div class="pie-layout">
-        <div class="pie" style="background:conic-gradient(${slices || "#dbe5ef 0deg 360deg"})"></div>
-        <div>${teams.map((team, index) =>
-          `<div class="zone-row"><span><i class="dot" style="background:${colors[index]}"></i>Équipe ${team}</span><b>${totals[index].toLocaleString("fr-FR")} colis</b></div>`,
-        ).join("")}</div>
+        <div class="pie" style="background:conic-gradient(${slices || "#dbe5ef 0deg 360deg"})">${pieLabels}</div>
+        <div>${teams.map((team, index) => {
+          const percent = productionTotal
+            ? ((totals[index] / productionTotal) * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 })
+            : "0";
+          return `<div class="zone-row"><span><i class="dot" style="background:${colors[index]}"></i>Équipe ${team} · ${percent} %</span><b>${totals[index].toLocaleString("fr-FR")} colis</b></div>`;
+        }).join("")}</div>
       </div>
     </section>
   </div>
@@ -624,7 +666,9 @@ function historyView(el) {
         tr.onclick = () => displayStops(tr.dataset.id, "historyStops");
         tr.ondblclick = () => synthesis(tr.dataset.id);
       });
-    if (state.admin) $("#exportHistory").onclick = () => exportReports(list);
+    if (state.admin)
+      $("#exportHistory").onclick = () =>
+        exportReports(list, $("#filterDate").value);
   };
   ["filterDate", "filterShift", "filterTeam"].forEach(
     (id) => ($("#" + id).onchange = apply),
@@ -712,19 +756,14 @@ function stopsView(el) {
         D.durationText(s.minutes),
       ]),
     ];
-    if (await cq.exportXlsx({ name: `temps-arret_${fileDate()}.xlsx`, rows }))
+    if (
+      await cq.exportXlsx({
+        name: `temps-arret_${dateFilterToken()}.xlsx`,
+        rows,
+      })
+    )
       toast("Export XLSX terminé");
   };
-}
-function auditDetail(v) {
-  try {
-    return JSON.stringify(JSON.parse(v), null, 2);
-  } catch {
-    return String(v ?? "");
-  }
-}
-function auditView(el) {
-  el.innerHTML = `<section class="panel"><h2>Journal de modification</h2>${state.audit.map((a) => `<details class="audit-entry"><summary>${new Date(a.at).toLocaleString("fr-FR")} · ${esc(a.user)} · ${esc(a.action)} · ${esc(a.id)}</summary>${a.detail ? `<pre>${esc(auditDetail(a.detail))}</pre>` : ""}</details>`).join("") || "<p>Aucune modification enregistrée.</p>"}</section>`;
 }
 function newReport(existing = null) {
   const hits = {};
@@ -749,12 +788,28 @@ function newReport(existing = null) {
     try {
       const errors = D.validateReport(r);
       if (errors.length) throw new Error(errors.join("\n"));
+      // Le même créneau ne peut appartenir qu’à une seule équipe.
+      const reportId = `${r.date}_${r.shift}_${r.team}`;
+      const duplicate = state.reports.find(
+        (saved) => saved.date === r.date && saved.shift === r.shift && saved.id !== reportId,
+      );
+      if (duplicate)
+        throw new Error(
+          `Un rapport existe déjà pour cette date et ce quart (équipe ${duplicate.team}).`,
+        );
       await cq.saveReport(r);
       await reload();
       render();
       toast("Rapport enregistré.");
+      // Ouvre immédiatement la synthèse du rapport tout juste sauvegardé.
+      const saved = state.reports.find(
+        (item) => item.date === r.date && item.shift === r.shift && item.team === r.team,
+      );
+      if (saved) synthesis(saved.id);
+      return true;
     } catch (e) {
       alert(e.message);
+      return false;
     }
   });
 }
@@ -783,6 +838,7 @@ function openReport(id) {
       )}<div class="actions"><button class="secondary" onclick="this.closest('.modal').remove()">Fermer</button></div></section></div>`,
   );
 }
+// synthesis : affiche les lignes calculées par le modèle métier dans le tableau de quart.
 function synthesis(id) {
   const r = state.reports.find((x) => x.id === id);
   if (!r) return;
@@ -844,7 +900,8 @@ function synthesis(id) {
     };
   }
 }
-async function exportReports(rs) {
+// exportReports : exporte les rapports visibles en reprenant la date du filtre.
+async function exportReports(rs, exactDate = "") {
   const rows = [
     [
       "Date",
@@ -866,7 +923,12 @@ async function exportReports(rs) {
       ];
     }),
   ];
-  if (await cq.exportXlsx({ name: `rapports-quart_${fileDate()}.xlsx`, rows }))
+  if (
+    await cq.exportXlsx({
+      name: `rapports-quart_${dateFilterToken(exactDate)}.xlsx`,
+      rows,
+    })
+  )
     toast("Export Excel terminé");
 }
 async function init() {

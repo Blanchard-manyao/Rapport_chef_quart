@@ -1,4 +1,5 @@
 // Modèle métier JavaScript porté de Donnees.cs / FormPrincipal.cs.
+// Les fonctions ci-dessous traduisent les calculs de production en règles réutilisables.
 "use strict";
 
 const TEAMS = Object.freeze({
@@ -69,6 +70,7 @@ function emptyReport() {
     stops: [],
   };
 }
+// parseTime : convertit une saisie comme « 07H30 » en minutes après minuit.
 function parseTime(value) {
   const m = String(value ?? "")
     .trim()
@@ -83,6 +85,7 @@ function normalizeTime(value) {
   if (n === null) return "";
   return `${String(Math.floor(n / 60)).padStart(2, "0")}H${String(n % 60).padStart(2, "0")}`;
 }
+// stopDuration : calcule la durée entre deux heures déjà validées.
 function stopDuration(stop) {
   const start = parseTime(stop.start),
     end = parseTime(stop.end);
@@ -147,6 +150,7 @@ function derive(r) {
     }),
   };
 }
+// validateReport : contrôle les champs et l’ordre des heures avant l’enregistrement.
 function validateReport(r) {
   const errors = [];
   if (!r.date) errors.push("La date est obligatoire.");
@@ -162,16 +166,27 @@ function validateReport(r) {
         errors.push(`${label} du séchoir ${dryer.number} doit être compris entre 0 et 130.`);
     }
   }
+  const checkTimeRange = (startValue, endValue, label) => {
+    if (!startValue && !endValue) return;
+    const start = parseTime(startValue),
+      end = parseTime(endValue);
+    if (start === null || end === null) {
+      errors.push(`Heure invalide pour ${label}. Saisissez une heure comme 07H30.`);
+    } else if (end <= start) {
+      errors.push(`L’heure de fin doit être supérieure à l’heure de début pour ${label}.`);
+    }
+  };
   for (const stop of [
     ...(r.stops || []),
     ...(r.drying?.dryers || []).flatMap((d) => d.stops || []),
   ]) {
-    if (!stop.start && !stop.end) continue;
-    if (parseTime(stop.start) === null || parseTime(stop.end) === null)
-      errors.push(
-        `Heure invalide pour l’arrêt ${stop.zone || ""}. Saisissez une heure comme 07H30.`,
-      );
+    checkTimeRange(stop.start, stop.end, `l’arrêt ${stop.zone || ""}`);
   }
+  Object.entries(r.generators || {}).forEach(([name, periods]) =>
+    (periods || []).forEach((period) =>
+      checkTimeRange(period.start, period.end, `la période du ${name}`),
+    ),
+  );
   return errors;
 }
 function synthesisRows(r) {
@@ -311,18 +326,6 @@ function reportText(r) {
 function reportId(r) {
   return `${r.date}_${r.shift}_${r.team}`;
 }
-function groupStopsByZone(reports) {
-  const out = {};
-  for (const r of reports)
-    for (const s of [
-      ...(r.stops || []),
-      ...(r.drying?.dryers || []).flatMap((d) =>
-        (d.stops || []).map((x) => ({ ...x, zone: `Séchoir ${d.number}` })),
-      ),
-    ])
-      out[s.zone || "Autre"] = (out[s.zone || "Autre"] || 0) + stopDuration(s);
-  return out;
-}
 window.CQDomain = Object.freeze({
   TEAMS,
   SHIFTS,
@@ -341,5 +344,4 @@ window.CQDomain = Object.freeze({
   synthesisRows,
   reportText,
   reportId,
-  groupStopsByZone,
 });

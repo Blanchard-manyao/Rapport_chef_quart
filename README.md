@@ -1,8 +1,19 @@
 # Rapport Chef de Quart — JavaScript / Electron
 
-Portage bureau Windows en JavaScript. Les équipes peuvent créer leurs rapports et consulter l’historique, y compris les détails des arrêts et les synthèses de quart. Le tableau de bord, les rapports enregistrés, l’analyse des arrêts, le journal d’audit et les exports sont réservés à l’administrateur.
+Les équipes peuvent créer leurs rapports et consulter l’historique, y compris les détails des arrêts et les synthèses de quart. Le tableau de bord, les rapports enregistrés, l’analyse des arrêts et les exports sont réservés à l’administrateur.
 
-La synthèse reprend le tableau du logiciel C# et s’affiche après l’enregistrement d’un rapport. Sa capture PNG est enregistrée automatiquement dans `Documents\RapportQuart\Captures`; les captures d’équipe sont séparées dans un sous-dossier dédié et chaque équipe ne peut capturer que ses propres rapports. Le dossier de captures de l’équipe s’ouvre depuis la synthèse. Le formulaire de saisie occupe le plein écran, avec l’aperçu « Rapport à copier » sous les onglets du rapport. Les compteurs Brûleur 1 et Brûleur 2 sont limités à 130. Une confirmation est demandée avant chaque déconnexion.
+La synthèse s’affiche après l’enregistrement d’un rapport. Sa capture PNG peut être enregistrée dans `Documents\RapportQuart\Captures`; les captures d’équipe sont séparées dans un sous-dossier dédié et chaque équipe ne peut capturer que ses propres rapports. Le formulaire de saisie occupe le plein écran, avec l’aperçu « Rapport à copier » sous les onglets. Les compteurs Brûleur 1 et Brûleur 2 sont limités à 130. Une confirmation est demandée avant chaque déconnexion.
+
+## Organisation du code
+
+- `src/main.js` — processus principal Electron : fenêtre, connexion, données partagées, validations et exports.
+- `src/preload.js` — liste les échanges autorisés entre l’interface et Electron.
+- `src/domain.js` — règles métier : calculs de production, durées d’arrêt, validation et lignes de synthèse.
+- `src/report-form.js` — formulaire de saisie, onglets, contrôles d’heures et aperçu du texte à copier.
+- `src/renderer.js` — écrans, navigation, filtres, tableau de bord, historique et export des rapports.
+- `src/style.css` — mise en page et adaptation aux tailles d’écran.
+
+Les noms et commentaires des fonctions indiquent en français le rôle de chaque partie. Les exports Excel reprennent la date ou la plage choisie dans le filtre.
 
 ## Lancer en développement
 
@@ -22,6 +33,6 @@ Les données locales sont chiffrées par Windows via Electron `safeStorage` lors
 
 ## Import de l’ancienne base C#
 
-Au premier accès administrateur, l’application détecte et importe automatiquement `C:\ProgramData\RapportQuart\rapports_quart.db` (ou le dossier défini par `RAPPORT_QUART_DONNEES`). L’import lit les fichiers SQLite en clair et les bases SQLCipher de l’ancien programme (avec `cle.dat`, déchiffré par DPAPI Windows). Il importe rapports, relevés séchoirs, arrêts, générateurs, journal d’audit et mots de passe des équipes. Les rapports ayant le même identifiant sont ignorés ; la base source n’est jamais modifiée.
+Au premier accès administrateur, l’application détecte et importe automatiquement `C:\ProgramData\RapportQuart\rapports_quart.db` (ou le dossier défini par `RAPPORT_QUART_DONNEES`). L’import lit les fichiers SQLite en clair et les bases SQLCipher de l’ancien programme (avec `cle.dat`, déchiffré par DPAPI Windows). Il importe les rapports, les relevés séchoirs, les arrêts, les générateurs et les mots de passe des équipes. Les rapports ayant le même identifiant sont ignorés ; la base source n’est jamais modifiée.
 
 Les données sont conservées dans le dossier utilisateur d’Electron. Les exports de rapports et de temps d’arrêt sont des fichiers `.xlsx`.

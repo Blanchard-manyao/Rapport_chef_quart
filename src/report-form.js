@@ -1,5 +1,6 @@
 "use strict";
 
+// Formulaire de saisie : onglets, contrôles immédiats et aperçu du rapport.
 (() => {
   const D = window.CQDomain;
 
@@ -324,6 +325,7 @@
       if (event.target.matches(".cancel")) modal.remove();
     });
 
+    // Met à jour les durées et le texte du rapport à partir des champs visibles.
     function refreshPreview() {
       const current = collect(form, report);
       const derived = D.derive(current);
@@ -332,12 +334,19 @@
         group.querySelectorAll(".stop-row").forEach((row) => {
           const start = row.querySelector('[data-stop="start"]').value;
           const end = row.querySelector('[data-stop="end"]').value;
-          const valid = D.parseTime(start) !== null && D.parseTime(end) !== null;
+          const startMinute = D.parseTime(start),
+            endMinute = D.parseTime(end),
+            complete = startMinute !== null && endMinute !== null,
+            valid = complete && endMinute > startMinute;
           const duration = valid ? D.stopDuration({ start, end }) : 0;
           total += duration;
-          row.querySelector("[data-stop-duration]").textContent = valid
+          const durationLabel = row.querySelector("[data-stop-duration]");
+          durationLabel.textContent = valid
             ? `Durée : ${D.durationText(duration)}`
-            : "Durée : —";
+            : complete
+              ? "Fin après le début requise"
+              : "Durée : —";
+          durationLabel.classList.toggle("invalid-time", complete && !valid);
         });
         group.querySelector("[data-stop-total]").textContent = D.durationText(total);
         group.querySelector("[data-stop-run]").textContent = D.durationText(Math.max(480 - total, 0));
@@ -345,10 +354,17 @@
       modal.querySelectorAll(".gen-row").forEach((row) => {
         const start = row.querySelector('[data-gen-time="start"]').value;
         const end = row.querySelector('[data-gen-time="end"]').value;
-        const complete = D.parseTime(start) !== null && D.parseTime(end) !== null;
-        row.querySelector("[data-gen-duration]").textContent = complete
+        const startMinute = D.parseTime(start),
+          endMinute = D.parseTime(end),
+          complete = startMinute !== null && endMinute !== null,
+          valid = complete && endMinute > startMinute,
+          duration = row.querySelector("[data-gen-duration]");
+        duration.textContent = valid
           ? `Fonctionnement : ${D.durationText(D.stopDuration({ start, end }))}`
-          : "Fonctionnement : —";
+          : complete
+            ? "Fin après le début requise"
+            : "Fonctionnement : —";
+        duration.classList.toggle("invalid-time", complete && !valid);
       });
       modal.querySelector("[data-present]").textContent = derived.present;
       modal.querySelector("[data-prewash]").textContent = `${derived.prewashTotal.toLocaleString("fr-FR")} kg`;
@@ -377,6 +393,7 @@
       }
     };
 
+    // La validation métier s’exécute avant l’appel de sauvegarde principal.
     const saveReport = async () => {
       const result = collect(form, report);
       const errors = D.validateReport(result);
