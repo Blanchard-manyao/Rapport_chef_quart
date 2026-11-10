@@ -83,6 +83,8 @@ button.danger {
   display: flex;
   align-items: center;
   gap: 10px;
+  border-left: 1px solid #ffffff55;
+  padding-left: 18px;
 }
 .content {
   padding: 24px;
@@ -550,7 +552,7 @@ body {
 }
 .content:has(.cards) {
   display: grid;
-  grid-template-rows: minmax(72px, auto) minmax(220px, 0.9fr) minmax(210px, 1.1fr);
+  grid-template-rows: minmax(72px, auto) minmax(220px, 1.1fr) minmax(130px, 0.9fr);
   gap: 12px;
   overflow: hidden;
   padding: 12px 18px;
@@ -558,7 +560,8 @@ body {
 .content:has(.cards) > .cards {
   margin: 0;
 }
-.content:has(.cards) > .grid2 {
+.content:has(.cards) > .grid2,
+.content:has(.cards) > .home-zones {
   min-height: 0;
   margin-top: 0 !important;
 }
@@ -588,6 +591,21 @@ body {
 .content:has(.cards) .zone-grid {
   grid-template-columns: repeat(6, minmax(0, 1fr));
 }
+.content:has(.cards) .home-zones {
+  display: flex;
+  flex-direction: column;
+}
+.content:has(.cards) .home-zones .zone-grid {
+  min-height: 0;
+  flex: 1;
+}
+.content:has(.cards) .zone-card {
+  justify-content: center;
+}
+.home-trend {
+  display: flex;
+  flex-direction: column;
+}
 .content:has(.cards) .pie {
   width: min(145px, 100%);
   height: auto;
@@ -613,6 +631,11 @@ body {
 }
 .line-chart-with-legend .line-chart-wrap {
   height: 100%;
+}
+.report-row,
+.report-row td {
+  cursor: pointer;
+  user-select: none;
 }
 .synthesis-drawer {
   top: 50%;

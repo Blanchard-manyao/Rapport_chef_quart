@@ -16,6 +16,9 @@ const state = {
   legacyPrompted: false,
   refreshTimer: null,
   sessionVersion: 0,
+  chartMode: "day",
+  selectedStopsReportId: null,
+  selectedStopsTarget: null,
 };
 const $ = (s, root = document) => root.querySelector(s),
   esc = (s) =>
@@ -245,7 +248,7 @@ function shell() {
     audit: "Journal de modification",
   };
   const teamActions = state.admin
-    ? '<button id="backup" class="secondary">Exporter une sauvegarde</button>'
+    ? ""
     : '<button id="changeTeam" class="secondary">Changer d’équipe</button>';
   return `<div class="shell"><aside class="side"><div class="brand">USINE MISSEHI<br><small>Rapport de quart</small></div>${tabs.map(([k, t]) => `<button data-tab="${k}" class="${state.tab === k ? "active" : ""}">${t}</button>`).join("")}${teamActions}<button id="password" class="secondary">Changer le mot de passe</button><button id="logout" class="logout">Déconnexion</button></aside><section class="main"><header class="top"><h1>${titles[state.tab]}</h1>${
     showFilters
@@ -259,7 +262,7 @@ function shell() {
           )
           .join(
             "",
-          )}</select></label><button id="refresh" class="secondary">Actualiser</button></div>`
+          )}</select></label>${state.admin ? `<label>Évolution <select id="chartMode"><option value="day" ${state.chartMode === "day" ? "selected" : ""}>Par jour</option><option value="month" ${state.chartMode === "month" ? "selected" : ""}>Par mois</option></select></label>` : ""}<button id="refresh" class="secondary">Actualiser</button></div>`
       : ""
   }</header><main class="content" id="view"></main></section></div>`;
 }
@@ -284,6 +287,11 @@ function render() {
       } catch (e) {
         alert(e.message);
       }
+    };
+  if ($("#chartMode"))
+    $("#chartMode").onchange = (e) => {
+      state.chartMode = e.target.value;
+      render();
     };
   if (!state.admin)
     $("#changeTeam").onclick = async () => {
@@ -318,6 +326,10 @@ function render() {
       audit: auditView,
     })[state.tab] || createView
   )(view);
+  if (state.selectedStopsReportId && state.selectedStopsTarget) {
+    const target = $(`#${state.selectedStopsTarget}`);
+    if (target) displayStops(state.selectedStopsReportId, state.selectedStopsTarget);
+  }
 }
 async function closeSession() {
   const sessionVersion = ++state.sessionVersion;
@@ -388,8 +400,16 @@ function allStops(rs = period()) {
 function sum(a) {
   return a.reduce((n, x) => n + (Number(x) || 0), 0);
 }
-function productionCurve(reports) {
-  const dates = [...new Set(reports.map((r) => r.date))].sort();
+function productionCurve(reports, mode = "day") {
+  const year = state.month.slice(0, 4),
+    chartReports =
+      mode === "month"
+        ? state.reports.filter((r) => String(r.date || "").startsWith(year))
+        : reports,
+    dates =
+      mode === "month"
+        ? [...new Set(chartReports.map((r) => String(r.date).slice(0, 7)))].sort()
+        : [...new Set(chartReports.map((r) => r.date))].sort();
   if (!dates.length)
     return '<p class="muted">Aucune production enregistrée pour cette période.</p>';
 
@@ -398,8 +418,8 @@ function productionCurve(reports) {
   const values = teams.map((team) =>
     dates.map((date) =>
       sum(
-        reports
-          .filter((r) => r.date === date && r.team === team)
+        chartReports
+          .filter((r) => String(r.date || "").startsWith(date) && r.team === team)
           .map((r) => r.production?.parcels),
       ),
     ),
@@ -438,7 +458,7 @@ function productionCurve(reports) {
       const markers = coords
         .map(
           ([x, y], index) =>
-            `<circle cx="${x}" cy="${y}" r="4" fill="${colors[teamIndex]}"><title>Équipe ${teams[teamIndex]} · ${dates[index]} : ${compact(points[index])} colis</title></circle>`,
+          `<circle cx="${x}" cy="${y}" r="4" fill="${colors[teamIndex]}"><title>Équipe ${teams[teamIndex]} · ${dates[index]} : ${compact(points[index])} colis</title></circle>`,
         )
         .join("");
       return `<g class="chart-series"><path d="${path}" stroke="${colors[teamIndex]}"/>${markers}</g>`;
@@ -448,7 +468,7 @@ function productionCurve(reports) {
   const labels = dates
     .map(
       (date, index) =>
-        `<text class="chart-date" x="${xAt(index)}" y="244" text-anchor="middle">${date.slice(8, 10)}</text>`,
+        `<text class="chart-date" x="${xAt(index)}" y="244" text-anchor="middle">${mode === "month" ? new Date(`${date}-01T00:00:00`).toLocaleDateString("fr-FR", { month: "short" }) : date.slice(8, 10)}</text>`,
     )
     .join("");
   const legend = teams
@@ -458,13 +478,13 @@ function productionCurve(reports) {
     )
     .join("");
 
-  return `<div class="line-chart-wrap"><svg class="line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Évolution journalière de la production par équipe">${grid}${series}${labels}</svg></div><div class="legend">${legend}</div>`;
+  return `<div class="line-chart-with-legend"><div class="line-chart-wrap"><svg class="line-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Évolution de la production par équipe ${mode === "month" ? "par mois" : "par jour"}">${grid}${series}${labels}</svg></div><div class="legend">${legend}</div></div>`;
 }
 function reportTable(rs, withActions = false) {
   return `<div class="tablewrap"><table><thead><tr><th>Date</th><th>Quart</th><th>Équipe</th><th>Effectif présent</th><th>Production</th><th>Tonnage (kg)</th>${withActions ? "<th>Action</th>" : ""}</tr></thead><tbody>${rs
     .map((r) => {
       const d = D.derive(r);
-      return `<tr data-id="${esc(r.id)}"><td>${dateFmt(r.date)}</td><td>${esc(r.shift)}</td><td>${esc(r.team)}</td><td>${d.present}</td><td>${Number(r.production?.parcels || 0)}</td><td>${d.kg.toLocaleString("fr-FR")}</td>${withActions ? `<td><button class="secondary" data-open="${esc(r.id)}">Voir</button> <button data-synthesis="${esc(r.id)}">Synthèse</button></td>` : ""}</tr>`;
+      return `<tr class="report-row" data-id="${esc(r.id)}"><td>${dateFmt(r.date)}</td><td>${esc(r.shift)}</td><td>${esc(r.team)}</td><td>${d.present}</td><td>${Number(r.production?.parcels || 0)}</td><td>${d.kg.toLocaleString("fr-FR")}</td>${withActions ? `<td><button class="secondary" data-open="${esc(r.id)}">Voir</button> <button data-synthesis="${esc(r.id)}">Synthèse</button></td>` : ""}</tr>`;
     })
     .join("")}</tbody></table></div>`;
 }
@@ -480,9 +500,10 @@ function home(el) {
   const rs = period(),
     st = allStops(rs),
     prod = sum(rs.map((r) => r.production?.parcels)),
-    tot = sum(st.map((s) => s.minutes)),
-    zones = {};
-  st.forEach((s) => (zones[s.zone] = (zones[s.zone] || 0) + s.minutes));
+    zones = STOP_ZONES.map((zone) => ({
+      name: zone,
+      minutes: sum(st.filter((stop) => stop.zone === zone).map((stop) => stop.minutes)),
+    }));
 
   const cols = ["#2563eb", "#16a34a", "#f59e0b", "#9333ea"];
   const totals = Object.keys(D.TEAMS).map((t) =>
@@ -496,7 +517,11 @@ function home(el) {
       return `${cols[i]} ${a}deg ${angle}deg`;
     })
     .join(",");
-  el.innerHTML = `<div class="cards"><div class="card">Rapports enregistrés<b>${rs.length}</b></div><div class="card">Production du mois<b>${prod.toLocaleString("fr-FR")} colis</b></div><div class="card">Temps d’arrêt<b>${D.durationText(tot)}</b></div></div><div class="grid2"><section class="panel"><h2>Évolution de la production par équipe</h2>${productionCurve(rs)}</section><section class="panel"><h2>Répartition de la production par équipe</h2><div class="pie-layout"><div class="pie" style="background:conic-gradient(${slices || "#dbe5ef 0deg 360deg"})"></div><div>${Object.keys(
+  const chartReports =
+    state.chartMode === "month"
+      ? state.reports.filter((r) => String(r.date || "").startsWith(state.month.slice(0, 4)))
+      : state.reports.filter((r) => String(r.date || "").startsWith(state.month));
+  el.innerHTML = `<div class="cards"><div class="card">Rapports enregistrés<b>${rs.length}</b></div><div class="card">Production de la période<b>${prod.toLocaleString("fr-FR")} colis</b></div></div><div class="grid2"><section class="panel home-trend"><h2>Évolution de la production par équipe</h2>${productionCurve(chartReports, state.chartMode)}</section><section class="panel"><h2>Répartition de la production par équipe</h2><div class="pie-layout"><div class="pie" style="background:conic-gradient(${slices || "#dbe5ef 0deg 360deg"})"></div><div>${Object.keys(
     D.TEAMS,
   )
     .map(
@@ -505,22 +530,12 @@ function home(el) {
     )
     .join(
       "",
-    )}</div></div></section></div><div class="grid2" style="margin-top:14px"><section class="panel"><h2>Rapports enregistrés par équipe</h2>${Object.entries(
-    D.TEAMS,
-  )
+    )}</div></div></section></div><section class="panel home-zones"><h2>Temps d’arrêt par zone</h2><div class="zone-grid">${zones
     .map(
-      ([t, name]) =>
-        `<div class="zone-row"><span>Équipe ${t} — ${esc(name)}</span><b>${sum(rs.filter((r) => r.team === t).map((r) => r.production?.parcels))} colis</b></div>`,
+      ({ name, minutes }) =>
+        `<article class="zone-card"><span>${esc(name)}</span><b>${D.durationText(minutes)}</b></article>`,
     )
-    .join("")}</section><section class="panel"><h2>Temps d’arrêt par zone</h2>${
-    Object.entries(zones)
-      .sort((a, b) => b[1] - a[1])
-      .map(
-        ([z, m]) =>
-          `<div class="zone-row"><span>${esc(z)}</span><b>${D.durationText(m)}</b></div>`,
-      )
-      .join("") || '<p class="muted">Aucun arrêt pour cette période.</p>'
-  }</section></div>`;
+    .join("")}</div></section>`;
 }
 function createView(el) {
   el.innerHTML = `<section class="panel"><h2>Nouveau rapport de quart</h2><p class="muted">Créez ou complétez le rapport de votre équipe. Les rapports enregistrés restent consultables dans l’historique.</p><button id="startReport">Créer un rapport</button></section>`;
@@ -531,6 +546,7 @@ function reportsView(el) {
   el.innerHTML = `<section class="panel"><h2>Rapports enregistrés</h2>${reportTable(rs, true)}<div class="actions"><button id="exportReports" class="secondary">Exporter Excel</button></div><h3>Arrêts du rapport sélectionné</h3><div id="reportStops" class="muted">Sélectionnez un rapport dans le tableau.</div></section>`;
   bindReportButtons();
   document.querySelectorAll("tbody tr[data-id]").forEach((tr) => {
+    tr.onclick = () => displayStops(tr.dataset.id);
     tr.ondblclick = () => displayStops(tr.dataset.id);
     tr.oncontextmenu = (e) => {
       e.preventDefault();
@@ -601,6 +617,8 @@ function displayStops(id, target = "reportStops") {
   const r = state.reports.find((x) => x.id === id);
   if (!r) return;
   const stops = stopsOf(r);
+  state.selectedStopsReportId = id;
+  state.selectedStopsTarget = target;
   const box = $(`#${target}`);
   if (!stops.length) {
     box.innerHTML = "<p>Aucun arrêt enregistré pour ce rapport.</p>";
