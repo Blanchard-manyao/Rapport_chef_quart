@@ -3,12 +3,12 @@
 const zonesArret = ["Prélavage", "Conditionnement", "Ligne 1", "Ligne 2", "Séchoir 1", "Séchoir 2", "Séchoir 3", "Autre"];
 const equipes = ["A", "B", "C", "D"];
 const couleurs = ["#2563eb", "#f59e0b", "#ff2c2c", "#16a34a"];
-const etat = { rapports: [], debut: "", fin: "", mois: new Date().toISOString().slice(0, 7), jour: "" };
+const etat = { rapports: [], debut: "", fin: "", mois: new Date().toISOString().slice(0, 7), jour: "", onglet: "home" };
 const elements = {
   connexion: document.querySelector("#connexion"), tableau: document.querySelector("#tableauDeBord"),
   formulaire: document.querySelector("#formulaireConnexion"), message: document.querySelector("#message"),
   deconnexion: document.querySelector("#deconnexion"), actualiser: document.querySelector("#actualiser"),
-  contenu: document.querySelector("#contenu"), mois: document.querySelector("#mois"), jour: document.querySelector("#jour"),
+  contenu: document.querySelector("#contenu"), titre: document.querySelector("#titreVue"), mois: document.querySelector("#mois"), jour: document.querySelector("#jour"),
   debut: document.querySelector("#debutPeriode"), fin: document.querySelector("#finPeriode"),
 };
 
@@ -122,8 +122,36 @@ function afficherTableauDeBord() {
   elements.contenu.innerHTML = `<div class="cartes"><div class="carte">Rapports enregistrés<b>${formaterNombre(rapports.length)}</b></div><div class="carte">Production de la période<b>${formaterNombre(production)} colis</b></div></div>
     <div class="grille-deux resume-accueil"><section class="panneau zones-accueil"><h2>Temps d’arrêt par zone</h2><div class="grille-zones">${zones.map(({ nom, minutes }) => `<article class="carte-zone"><span>${echapper(nom)}</span><b>${duree(minutes)}</b></article>`).join("")}</div></section>
     <section class="panneau repartition-accueil"><h2>Répartition de la production par équipe</h2><div class="disposition-camembert"><svg class="camembert" viewBox="0 0 100 100" role="img" aria-label="Répartition de la production entre les équipes">${secteurs}</svg><div>${repartition}</div></div></section></div>
-    <section class="panneau tendance-accueil"><h2>Évolution de la production par équipe — ${modeGraphique === "month" ? "par mois" : "par jour"}</h2>${courbeProduction(rapports, modeGraphique)}</section>
-    <section class="panneau rapports-recents"><div class="entete-tableau"><h2>Rapports récents</h2><span>${rapports.length} rapport(s)</span></div>${rapports.length ? afficherTable(rapports) : '<p class="vide">Aucun rapport n’est synchronisé pour cette période.</p>'}</section>`;
+    <section class="panneau tendance-accueil"><h2>Évolution de la production par équipe — ${modeGraphique === "month" ? "par mois" : "par jour"}</h2>${courbeProduction(rapports, modeGraphique)}</section>`;
+}
+
+function afficherRapportsEnregistres() {
+  const rapports = filtrerRapports();
+  const lignes = rapports.map((rapport) => {
+    const staff = rapport.staff || {};
+    const presents = nombre(staff.total) - ["absent", "malade", "permission", "conge"].reduce((total, cle) => total + nombre(staff[cle]), 0);
+    return \`<tr><td>\${formaterDate(rapport.date)}</td><td>\${echapper(rapport.quart || "—")}</td><td>\${echapper(rapport.equipe || "—")}</td><td>\${presents}</td><td>\${formaterNombre(nombre(rapport.production?.paniers))}</td><td>\${formaterNombre(nombre(rapport.production?.tonnageKg))}</td></tr>\`;
+  }).join("");
+  elements.contenu.innerHTML = \`<section class="panneau"><h2>Rapports enregistrés</h2><p class="discret">\${rapports.length} rapport(s) pour la période sélectionnée.</p><div class="tableau-defilement"><table><thead><tr><th>Date</th><th>Quart</th><th>Équipe</th><th>Effectif présent</th><th>Production</th><th>Tonnage (kg)</th></tr></thead><tbody>\${lignes || '<tr><td colspan="6">Aucun rapport enregistré pour cette période.</td></tr>'}</tbody></table></div></section>\`;
+}
+
+function afficherTempsArret() {
+  const arrets = filtrerRapports().flatMap((rapport) => arretsDuRapport(rapport).map((arret) => ({
+    ...arret, date: rapport.date, quart: rapport.quart, equipe: rapport.equipe,
+  }))).sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.quart).localeCompare(String(b.quart)) || String(a.equipe).localeCompare(String(b.equipe)));
+  const totaux = zonesArret.map((zone) => ({ zone, minutes: somme(arrets.filter((arret) => arret.zone === zone).map((arret) => arret.minutes)) }));
+  const cartes = totaux.map(({ zone, minutes }) => \`<article class="carte-zone"><span>\${echapper(zone)}</span><b>\${duree(minutes)}</b></article>\`).join("");
+  const lignes = arrets.map((arret) => \`<tr><td>\${formaterDate(arret.date)}</td><td>\${echapper(arret.quart || "—")}</td><td>\${echapper(arret.equipe || "—")}</td><td>\${echapper(arret.zone || "—")}</td><td>\${echapper(arret.start || "—")}–\${echapper(arret.end || "—")}</td><td>\${echapper(arret.cause || "—")}</td><td>\${duree(arret.minutes)}</td></tr>\`).join("");
+  elements.contenu.innerHTML = \`<section class="panneau resume-arrets"><h2>Temps d’arrêt par zone</h2><div class="grille-zones">\${cartes}</div></section><section class="panneau details-arrets"><h2>Détail par jour et quart — un arrêt distinct par ligne</h2><div class="tableau-defilement"><table><thead><tr><th>Jour</th><th>Quart</th><th>Équipe</th><th>Zone</th><th>Heures</th><th>Cause</th><th>Durée</th></tr></thead><tbody>\${lignes || '<tr><td colspan="7">Aucun arrêt enregistré pour cette période.</td></tr>'}</tbody></table></div></section>\`;
+}
+
+function afficherOnglet() {
+  const titres = { home: "Tableau de bord", reports: "Rapports enregistrés", stops: "Temps d’arrêt par zone" };
+  elements.titre.textContent = titres[etat.onglet];
+  document.querySelectorAll("[data-onglet]").forEach((bouton) => bouton.classList.toggle("actif", bouton.dataset.onglet === etat.onglet));
+  if (etat.onglet === "reports") afficherRapportsEnregistres();
+  else if (etat.onglet === "stops") afficherTempsArret();
+  else afficherTableauDeBord();
 }
 
 function synchroniserFiltres() {
@@ -147,8 +175,10 @@ async function chargerRapports() {
     elements.connexion.classList.add("masque");
     elements.tableau.classList.remove("masque");
     elements.deconnexion.classList.remove("masque");
+    document.querySelector("#entetePortail").classList.add("masque");
+    document.body.classList.add("connecte");
     synchroniserFiltres();
-    afficherTableauDeBord();
+    afficherOnglet();
   } catch (error) {
     if (error.message.includes("Session administrateur")) {
       elements.connexion.classList.remove("masque");
@@ -171,15 +201,17 @@ elements.formulaire.addEventListener("submit", async (event) => {
 });
 
 elements.actualiser.addEventListener("click", chargerRapports);
-elements.mois.addEventListener("change", () => { etat.mois = elements.mois.value; etat.jour = ""; afficherTableauDeBord(); synchroniserFiltres(); });
-elements.jour.addEventListener("change", () => { etat.jour = elements.jour.value; afficherTableauDeBord(); });
-elements.debut.addEventListener("change", () => { etat.debut = elements.debut.value; if (etat.fin && etat.debut > etat.fin) etat.fin = etat.debut; afficherTableauDeBord(); synchroniserFiltres(); });
-elements.fin.addEventListener("change", () => { etat.fin = elements.fin.value; if (etat.debut && etat.fin < etat.debut) etat.debut = etat.fin; afficherTableauDeBord(); synchroniserFiltres(); });
-document.querySelector("#effacerPeriode").addEventListener("click", () => { etat.debut = ""; etat.fin = ""; afficherTableauDeBord(); synchroniserFiltres(); });
+document.querySelectorAll("[data-onglet]").forEach((bouton) => bouton.addEventListener("click", () => { etat.onglet = bouton.dataset.onglet; afficherOnglet(); }));
+elements.mois.addEventListener("change", () => { etat.mois = elements.mois.value; etat.jour = ""; afficherOnglet(); synchroniserFiltres(); });
+elements.jour.addEventListener("change", () => { etat.jour = elements.jour.value; afficherOnglet(); });
+elements.debut.addEventListener("change", () => { etat.debut = elements.debut.value; if (etat.fin && etat.debut > etat.fin) etat.fin = etat.debut; afficherOnglet(); synchroniserFiltres(); });
+elements.fin.addEventListener("change", () => { etat.fin = elements.fin.value; if (etat.debut && etat.fin < etat.debut) etat.debut = etat.fin; afficherOnglet(); synchroniserFiltres(); });
+document.querySelector("#effacerPeriode").addEventListener("click", () => { etat.debut = ""; etat.fin = ""; afficherOnglet(); synchroniserFiltres(); });
 elements.deconnexion.addEventListener("click", async () => {
   await demander("/api/admin/logout", { method: "POST", body: "{}" });
   elements.tableau.classList.add("masque"); elements.deconnexion.classList.add("masque");
-  elements.connexion.classList.remove("masque"); message("");
+  elements.connexion.classList.remove("masque"); document.querySelector("#entetePortail").classList.remove("masque");
+  document.body.classList.remove("connecte"); message("");
 });
 
 chargerRapports();
