@@ -1,6 +1,6 @@
 {
   "name": "rapport-cq-js",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "description": "Application Windows de rapports de quart",
   "main": "src/principal.js",
   "scripts": {
@@ -15,6 +15,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@neondatabase/serverless": "^1.2.1",
     "electron": "^34.0.0",
     "electron-builder": "^25.1.8"
   },

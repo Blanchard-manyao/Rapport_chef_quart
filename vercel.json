@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    { "source": "/api/admin/:route*", "destination": "/api/admin?route=:route*" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" }
+      ]
+    }
+  ]
+}

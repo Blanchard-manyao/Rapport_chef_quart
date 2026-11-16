@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+  <title>Tableau de bord Admin · Rapport Chef de Quart</title>
+    <link rel="stylesheet" href="/admin.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="entete">
+        <div>
+          <p class="sur-titre">EXAT MISSEHI · RAPPORT DE QUART</p>
+          <h1>Tableau de bord</h1>
+          <p class="description">Rapport Chef de Quart · EXAT Missehi</p>
+        </div>
+        <button id="deconnexion" class="bouton secondaire masque" type="button">Déconnexion</button>
+      </header>
+
+      <p id="message" class="message masque" role="status"></p>
+
+      <section id="connexion" class="carte">
+        <h2>Connexion administrateur</h2>
+        <form id="formulaireConnexion">
+          <label>Identifiant<input name="username" autocomplete="username" required /></label>
+          <label>Mot de passe<input name="password" type="password" autocomplete="current-password" required /></label>
+          <button class="bouton" type="submit">Se connecter</button>
+        </form>
+      </section>
+
+      <section id="tableauDeBord" class="masque">
+        <div class="barre-filtres">
+          <label>Mois <input id="mois" type="month"></label>
+          <label>Jour <select id="jour"><option value="">Tous les jours</option></select></label>
+          <fieldset class="filtre-periode"><legend>Période</legend><label>Du <input id="debutPeriode" type="date"></label><label>Au <input id="finPeriode" type="date"></label><button id="effacerPeriode" class="bouton secondaire masque" type="button">Effacer</button></fieldset>
+          <button id="actualiser" class="bouton secondaire" type="button">Actualiser</button>
+        </div>
+        <div id="contenu" class="contenu-dashboard"></div>
+      </section>
+      <footer>Portail privé · Connexion chiffrée</footer>
+    </main>
+    <script src="/admin.js" defer></script>
+  </body>
+</html>
