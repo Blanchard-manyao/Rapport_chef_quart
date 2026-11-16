@@ -3,13 +3,34 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width,initial-scale=1">
-        <title>Rapport Chef de Quart</title><link rel="stylesheet" href="style.css">
+        <title>Rapport Chef de Quart</title><link rel="stylesheet" href="styles.css">
     </head>
         <body>
-            <div id="app"> </div>
-            <script src="domain.js"> </script>
-            <script src="report-form.js"></script> 
-            <script src="renderer.js"></script>
+            <div id="interface">
+                <main style="max-width:560px;margin:12vh auto;padding:28px;background:white;border-radius:12px;color:#163553;font:16px 'Segoe UI',Arial,sans-serif;box-shadow:0 8px 28px #16355322">
+                    <h1 style="margin-top:0">Rapport Chef de Quart</h1>
+                    <p id="messageDemarrage">Démarrage de l’application…</p>
+                </main>
+            </div>
+            <script>
+                window.addEventListener("error", function (evenement) {
+                    var zone = document.getElementById("interface");
+                    if (!zone) return;
+                    var detail = evenement.message || "Un fichier de l’interface n’a pas pu être chargé.";
+                    zone.innerHTML = '<main style="margin:12vh auto;max-width:700px;padding:28px;background:white;border-radius:12px;color:#163553;font:16px Segoe UI,Arial,sans-serif"><h1>Démarrage interrompu</h1><p>Erreur dans l’interface :</p><pre style="white-space:pre-wrap;color:#b42318"></pre><p>Fermez puis relancez l’application. Si le problème continue, transmettez ce message au responsable.</p></main>';
+                    zone.querySelector("pre").textContent = detail;
+                });
+                window.addEventListener("unhandledrejection", function (evenement) {
+                    var zone = document.getElementById("interface");
+                    if (!zone) return;
+                    var detail = evenement.reason && evenement.reason.message ? evenement.reason.message : String(evenement.reason);
+                    zone.innerHTML = '<main style="margin:12vh auto;max-width:700px;padding:28px;background:white;border-radius:12px;color:#163553;font:16px Segoe UI,Arial,sans-serif"><h1>Démarrage interrompu</h1><p>Erreur pendant le chargement des données :</p><pre style="white-space:pre-wrap;color:#b42318"></pre></main>';
+                    zone.querySelector("pre").textContent = detail;
+                });
+            </script>
+            <script src="metier.js"> </script>
+            <script src="formulaire-rapport.js"></script>
+            <script src="interface.js"></script>
         </body>
 </html>
 

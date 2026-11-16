@@ -2,18 +2,18 @@
 
 Les équipes peuvent créer leurs rapports et consulter l’historique, y compris les détails des arrêts et les synthèses de quart. Le tableau de bord, les rapports enregistrés, l’analyse des arrêts et les exports sont réservés à l’administrateur.
 
-La synthèse s’affiche après l’enregistrement d’un rapport. Sa capture PNG peut être enregistrée dans `Documents\RapportQuart\Captures`; les captures d’équipe sont séparées dans un sous-dossier dédié et chaque équipe ne peut capturer que ses propres rapports. Le formulaire de saisie occupe le plein écran, avec l’aperçu « Rapport à copier » sous les onglets. Les compteurs Brûleur 1 et Brûleur 2 sont limités à 130. Une confirmation est demandée avant chaque déconnexion.
+La synthèse s’affiche après l’enregistrement d’un rapport. Sa capture PNG peut être enregistrée dans `Documents\RapportQuart\Captures`; les captures d’équipe sont séparées dans un sous-dossier dédié et chaque équipe ne peut capturer que ses propres rapports. Le formulaire affiche toutes ses sections sur une seule page, dans l’ordre : Quart, Effectif, Prélavage, Granulation, Séchoirs, Conditionnement, Générateurs et Autres arrêts. Les titres sont agrandis. L’aperçu « Rapport à copier » reste à droite sur grand écran et passe sous le formulaire sur petit écran. Les compteurs Brûleur 1 et Brûleur 2 sont limités à 130. Une confirmation est demandée avant chaque déconnexion.
 
 ## Organisation du code
 
-- `src/main.js` — processus principal Electron : fenêtre, connexion, données partagées, validations et exports.
-- `src/preload.js` — liste les échanges autorisés entre l’interface et Electron.
-- `src/domain.js` — règles métier : calculs de production, durées d’arrêt, validation et lignes de synthèse.
-- `src/report-form.js` — formulaire de saisie, onglets, contrôles d’heures et aperçu du texte à copier.
-- `src/renderer.js` — écrans, navigation, filtres, tableau de bord, historique et export des rapports.
-- `src/style.css` — mise en page et adaptation aux tailles d’écran.
+- `src/principal.js` — processus principal Electron : fenêtre, connexion, données partagées, validations et exports.
+- `src/prechargement.js` — liste en français les méthodes autorisées entre l’interface et Electron.
+- `src/metier.js` — règles métier : calculs de production, durées d’arrêt, validation et lignes de synthèse.
+- `src/formulaire-rapport.js` — formulaire de saisie sur une page, contrôles d’heures et aperçu du texte à copier.
+- `src/interface.js` — écrans, navigation, filtres, tableau de bord, historique et export des rapports.
+- `src/styles.css` — mise en page et adaptation aux tailles d’écran.
 
-Les noms et commentaires des fonctions indiquent en français le rôle de chaque partie. Les exports Excel reprennent la date ou la plage choisie dans le filtre.
+Les noms des fichiers, des fonctions, des principales variables, des classes CSS, des identifiants HTML, des attributs de formulaire et des méthodes exposées à l’interface sont en français. Les clés enregistrées dans la base et les canaux IPC restent inchangés pour conserver la compatibilité. Les exports Excel reprennent la date ou la plage choisie dans le filtre.
 
 ## Lancer en développement
 

@@ -2,14 +2,14 @@
 // Les fonctions ci-dessous traduisent les calculs de production en règles réutilisables.
 "use strict";
 
-const TEAMS = Object.freeze({
+const EQUIPES = Object.freeze({
   A: "KONAN LUC",
   B: "EYO NESTOR",
   C: "DAMEY JEAN-BAPTISTE",
   D: "TIA LOU EDWIGE",
 });
-const SHIFTS = Object.freeze(["07h-15h", "15h-23h", "23h-07h"]);
-const ZONES = Object.freeze([
+const QUARTS = Object.freeze(["07h-15h", "15h-23h", "23h-07h"]);
+const ZONES_ARRET = Object.freeze([
   "Prélavage",
   "Conditionnement",
   "Ligne 1",
@@ -19,24 +19,24 @@ const ZONES = Object.freeze([
   "Séchoir 3",
   "Autre",
 ]);
-const KG_PER_UNIT = 1260;
-const PRELAVE_PER_BUCKET = 1500;
-const SHIFT_MINUTES = 480;
+const KG_PAR_COLIS = 1260;
+const KG_PAR_GODET = 1500;
+const MINUTES_PAR_QUART = 480;
 
-function emptyReport() {
+function creerRapportVide() {
   return {
     date: new Date().toISOString().slice(0, 10),
-    shift: SHIFTS[2],
+    shift: QUARTS[2],
     team: "A",
     staff: {
       total: 0,
       absent: 0,
-      sick: 0,
+      malade: 0,
       permission: 0,
-      leave: 0,
+      conge: 0,
       accidents: 0,
     },
-    prewash: { box: "", buckets: 0, secondBox: "", secondBuckets: 0 },
+    prelavage: { box: "", buckets: 0, secondBox: "", secondBuckets: 0 },
     granulation: {
       box: "",
       acidTitre: 1,
@@ -70,8 +70,8 @@ function emptyReport() {
     stops: [],
   };
 }
-// parseTime : convertit une saisie comme « 07H30 » en minutes après minuit.
-function parseTime(value) {
+// lireHeureEnMinutes : convertit une saisie comme « 07H30 » en minutes après minuit.
+function lireHeureEnMinutes(value) {
   const m = String(value ?? "")
     .trim()
     .match(/^(\d{1,2})\s*[:hH.]\s*(\d{0,2})$/);
@@ -80,33 +80,33 @@ function parseTime(value) {
     minute = Number(m[2] || 0);
   return h <= 23 && minute <= 59 ? h * 60 + minute : null;
 }
-function normalizeTime(value) {
-  const n = parseTime(value);
+function formaterHeure(value) {
+  const n = lireHeureEnMinutes(value);
   if (n === null) return "";
   return `${String(Math.floor(n / 60)).padStart(2, "0")}H${String(n % 60).padStart(2, "0")}`;
 }
-// stopDuration : calcule la durée entre deux heures déjà validées.
-function stopDuration(stop) {
-  const start = parseTime(stop.start),
-    end = parseTime(stop.end);
+// dureeArret : calcule la durée entre deux heures déjà validées.
+function dureeArret(stop) {
+  const start = lireHeureEnMinutes(stop.start),
+    end = lireHeureEnMinutes(stop.end);
   if (start === null || end === null) return 0;
   return (end - start + 1440) % 1440;
 }
-function durationText(minutes) {
+function formaterDuree(minutes) {
   const n = Math.max(0, Math.trunc(Number(minutes) || 0));
   return `${Math.floor(n / 60)} h ${String(n % 60).padStart(2, "0")} min`;
 }
-function staffPresent(r) {
+function effectifPresent(r) {
   const s = r.staff || {};
   return (
     Number(s.total || 0) -
-    ["absent", "sick", "permission", "leave"].reduce(
+    ["absent", "malade", "permission", "conge"].reduce(
       (n, k) => n + Number(s[k] || 0),
       0,
     )
   );
 }
-function derive(r) {
+function calculerIndicateurs(r) {
   const parcels = Number(r.production?.parcels || 0),
     dry = Number(r.drying?.basketsDry || 0);
   const stops = r.stops || [];
@@ -114,49 +114,49 @@ function derive(r) {
   const generatorRunTotals = {};
   Object.entries(r.generators || {}).forEach(([name, periods]) => {
     generatorRunTotals[name] = (periods || []).reduce(
-      (n, x) => n + stopDuration(x),
+      (n, x) => n + dureeArret(x),
       0,
     );
   });
   stops.forEach((s) => {
     const zone = s.zone || "Autre";
-    stopTotals[zone] = (stopTotals[zone] || 0) + stopDuration(s);
+    stopTotals[zone] = (stopTotals[zone] || 0) + dureeArret(s);
   });
   (r.drying?.dryers || []).forEach((d) => {
     stopTotals[`Séchoir ${d.number}`] =
       (stopTotals[`Séchoir ${d.number}`] || 0) +
-      (d.stops || []).reduce((a, s) => a + stopDuration(s), 0);
+      (d.stops || []).reduce((a, s) => a + dureeArret(s), 0);
   });
-  const kg = parcels * KG_PER_UNIT;
+  const kg = parcels * KG_PAR_COLIS;
   return {
-    present: staffPresent(r),
+    present: effectifPresent(r),
     kg,
-    prewashTotal:
-      (Number(r.prewash?.buckets || 0) +
-        Number(r.prewash?.secondBuckets || 0)) *
-      PRELAVE_PER_BUCKET,
+    prelavageTotal:
+      (Number(r.prelavage?.buckets || 0) +
+        Number(r.prelavage?.secondBuckets || 0)) *
+      KG_PAR_GODET,
     averageBasket: dry ? ((parcels * 36) / dry) * 35 : null,
     averageBasketDiv28: dry ? (((parcels * 36) / dry) * 35) / 28 : null,
     stopTotals,
     generatorRunTotals,
     totalStops: Object.values(stopTotals).reduce((a, b) => a + b, 0),
     dryers: (r.drying?.dryers || []).map((d) => {
-      const total = (d.stops || []).reduce((a, s) => a + stopDuration(s), 0);
+      const total = (d.stops || []).reduce((a, s) => a + dureeArret(s), 0);
       return {
         ...d,
         stopMinutes: total,
-        runMinutes: Math.max(SHIFT_MINUTES - total, 0),
+        runMinutes: Math.max(MINUTES_PAR_QUART - total, 0),
       };
     }),
   };
 }
-// validateReport : contrôle les champs et l’ordre des heures avant l’enregistrement.
-function validateReport(r) {
+// validerRapport : contrôle les champs et l’ordre des heures avant l’enregistrement.
+function validerRapport(r) {
   const errors = [];
   if (!r.date) errors.push("La date est obligatoire.");
-  if (!SHIFTS.includes(r.shift)) errors.push("Sélectionnez un quart valide.");
-  if (!TEAMS[r.team]) errors.push("Sélectionnez une équipe valide.");
-  if (staffPresent(r) < 0)
+  if (!QUARTS.includes(r.shift)) errors.push("Sélectionnez un quart valide.");
+  if (!EQUIPES[r.team]) errors.push("Sélectionnez une équipe valide.");
+  if (effectifPresent(r) < 0)
     errors.push("Les absences dépassent l’effectif total.");
   if (Number(r.production?.parcels || 0) < 0)
     errors.push("La production ne peut pas être négative.");
@@ -168,8 +168,8 @@ function validateReport(r) {
   }
   const checkTimeRange = (startValue, endValue, label) => {
     if (!startValue && !endValue) return;
-    const start = parseTime(startValue),
-      end = parseTime(endValue);
+    const start = lireHeureEnMinutes(startValue),
+      end = lireHeureEnMinutes(endValue);
     if (start === null || end === null) {
       errors.push(`Heure invalide pour ${label}. Saisissez une heure comme 07H30.`);
     } else if (end <= start) {
@@ -189,8 +189,8 @@ function validateReport(r) {
   );
   return errors;
 }
-function synthesisRows(r) {
-  const d = derive(r),
+function lignesSynthese(r) {
+  const d = calculerIndicateurs(r),
     dryers = d.dryers;
   const asClock = (minutes) => {
     const total = Math.max(0, Math.trunc(Number(minutes) || 0));
@@ -258,42 +258,41 @@ function synthesisRows(r) {
     { label: "Effectif présent", value: d.present, tone: "success" },
   ];
 }
-function reportText(r) {
-  const d = derive(r);
+function texteRapport(r) {
+  const d = calculerIndicateurs(r);
   const display = (value) => (String(value ?? "").trim() ? value : "-");
-  const hms = (minutes) => durationText(minutes);
+  const hms = (minutes) => formaterDuree(minutes);
   const lines = [
-    "RAPPORT CHEF DE QUART",
-    `${r.date} - Quart ${r.shift} - Équipe ${r.team}`,
-    `Chef de quart : ${TEAMS[r.team] || ""}`,
-    "=================================================================================",
-    `EFFECTIF : ${r.staff?.total || 0} | Présent ${d.present} | Absent ${r.staff?.absent || 0} | Malade ${r.staff?.sick || 0} | Permission ${r.staff?.permission || 0} | congé : ${r.staff?.leave || 0}`,
+    `RAPPORT CHEF DE QUART ||${r.date} || Quart ${r.shift} || }`,
+    `${EQUIPES[r.team]} || Équipe ${r.team}`,
+    "====================",
+    `EFFECTIF : ${r.staff?.total || 0} | Présent ${d.present} | Absent ${r.staff?.absent || 0} | Malade ${r.staff?.malade || 0} | Permission ${r.staff?.permission || 0} | congé : ${r.staff?.conge || 0}`,
     `ACCIDENT DE TRAVAIL : ${r.staff?.accidents || 0}`,
-    "=================================================================================",
+    "====================",
     `Paniers séchés : ${r.drying?.basketsDry || 0} | Production ${r.production?.parcels || 0} colis, soit ${d.kg.toLocaleString("fr-FR")} kg`,
     `Poids moyen d'un panier : ${d.averageBasket == null ? "-" : d.averageBasket.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | Poids moyen d'un pain : ${d.averageBasketDiv28 == null ? "-" : d.averageBasketDiv28.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
     `Box en cours d'usinage : ${display(r.granulation?.box)}`,
     `Paniers granulés : ${r.granulation?.baskets || 0} | Titre d'acide : ${r.granulation?.acidTitre ?? 0} g/l | Conso acide : ${r.granulation?.acidConsumption || 0} kg`,
-    `Box prélavé : (${display(r.prewash?.box)}) | ${r.prewash?.buckets || 0} godets | total prélavé ${((Number(r.prewash?.buckets) || 0) * PRELAVE_PER_BUCKET).toLocaleString("fr-FR")} kg`,
+    `Box prélavé : (${display(r.prelavage?.box)}) | ${r.prelavage?.buckets || 0} godets | total prélavé ${((Number(r.prelavage?.buckets) || 0) * KG_PAR_GODET).toLocaleString("fr-FR")} kg`,
   ];
-  if (Number(r.prewash?.secondBuckets) > 0 || String(r.prewash?.secondBox || "").trim())
-    lines.push(`Deuxième box prélavé : (${display(r.prewash?.secondBox)}) | ${r.prewash?.secondBuckets || 0} godets | total prélavé ${((Number(r.prewash?.secondBuckets) || 0) * PRELAVE_PER_BUCKET).toLocaleString("fr-FR")} kg`);
+  if (Number(r.prelavage?.secondBuckets) > 0 || String(r.prelavage?.secondBox || "").trim())
+    lines.push(`Deuxième box prélavé : (${display(r.prelavage?.secondBox)}) | ${r.prelavage?.secondBuckets || 0} godets | total prélavé ${((Number(r.prelavage?.secondBuckets) || 0) * KG_PAR_GODET).toLocaleString("fr-FR")} kg`);
 
   for (const zone of ["Ligne 1", "Ligne 2"]) {
     const minutes = d.stopTotals[zone] || 0;
-    lines.push(`${zone} : arrêts ${hms(minutes)} | fonctionnement ${hms(Math.max(SHIFT_MINUTES - minutes, 0))}`);
+    lines.push(`${zone} : arrêts ${hms(minutes)} | fonctionnement ${hms(Math.max(MINUTES_PAR_QUART - minutes, 0))}`);
   }
   lines.push(`Avance panier fin : ${display(r.granulation?.basketAdvance)}`);
-  lines.push("=================================================================================");
+  lines.push("====================",);
 
   for (const dryer of d.dryers) {
     lines.push(`Séchoir ${dryer.number} : cycle ${dryer.cycle || 0} sec | brûleurs ${dryer.burner1 || 0}/${dryer.burner2 || 0} | arrêt ${hms(dryer.stopMinutes)} | marche ${hms(dryer.runMinutes)}`);
   }
 
-  lines.push("=================================================================================");
+  lines.push("====================",);
   lines.push(`Balles détectées : début ${r.production?.balesStart || 0} | Pendant le quart ${r.production?.balesShift || 0} | Balles traitées ${r.production?.balesProcessed || 0} | Fin de quart ${r.production?.balesEnd || 0}`);
   lines.push(`Paniers lavés : ${display(r.granulation?.basketsWashed)}`);
-  lines.push("=================================================================================");
+  lines.push("====================",);
   lines.push("LES ARRÊTS DU QUART");
 
   const stops = [
@@ -306,13 +305,13 @@ function reportText(r) {
     for (const stop of stops) {
       const cause = stop.cause || "cause non précisée";
       const zone = stop.equipment ? `${stop.zone} (${stop.equipment})` : stop.zone;
-      lines.push(`- ${zone} | ${stop.start} - ${stop.end} : ${cause} | ${hms(stopDuration(stop))}`);
+      lines.push(`- ${zone} | ${stop.start} - ${stop.end} : ${cause} | ${hms(dureeArret(stop))}`);
     }
   } else {
     lines.push("Aucun");
   }
 
-  lines.push("=================================================================================");
+  lines.push("====================",);
   lines.push("GÉNÉRATEURS (Fonctionnement)");
   for (const [name, periods] of Object.entries(r.generators || {})) {
     const total = d.generatorRunTotals[name] || 0;
@@ -323,25 +322,25 @@ function reportText(r) {
   }
   return lines.join("\n");
 }
-function reportId(r) {
+function identifiantRapport(r) {
   return `${r.date}_${r.shift}_${r.team}`;
 }
-window.CQDomain = Object.freeze({
-  TEAMS,
-  SHIFTS,
-  ZONES,
-  KG_PER_UNIT,
-  PRELAVE_PER_BUCKET,
-  SHIFT_MINUTES,
-  emptyReport,
-  parseTime,
-  normalizeTime,
-  stopDuration,
-  durationText,
-  staffPresent,
-  derive,
-  validateReport,
-  synthesisRows,
-  reportText,
-  reportId,
+window.ReglesMetier = Object.freeze({
+  EQUIPES,
+  QUARTS,
+  ZONES_ARRET,
+  KG_PAR_COLIS,
+  KG_PAR_GODET,
+  MINUTES_PAR_QUART,
+  creerRapportVide,
+  lireHeureEnMinutes,
+  formaterHeure,
+  dureeArret,
+  formaterDuree,
+  effectifPresent,
+  calculerIndicateurs,
+  validerRapport,
+  lignesSynthese,
+  texteRapport,
+  identifiantRapport,
 });

@@ -1,5 +1,5 @@
 const {
-  app,
+  app: applicationElectron,
   BrowserWindow,
   Menu,
   screen,
@@ -8,78 +8,78 @@ const {
   dialog,
   shell,
 } = require("electron");
-const fs = require("node:fs");
-const path = require("node:path");
-const crypto = require("node:crypto");
+const fichiers = require("node:fs");
+const chemins = require("node:path");
+const cryptographie = require("node:crypto");
 // Une seule instance par session Windows ; un second lancement réactive la première.
-const hasSingleInstanceLock = app.requestSingleInstanceLock();
-if (!hasSingleInstanceLock) app.quit();
+const verrouInstanceUnique = applicationElectron.requestSingleInstanceLock();
+if (!verrouInstanceUnique) applicationElectron.quit();
 else
-  app.on("second-instance", () => {
-    if (win && !win.isDestroyed()) focusMainWindow();
+  applicationElectron.on("second-instance", () => {
+    if (fenetrePrincipale && !fenetrePrincipale.isDestroyed()) activerFenetrePrincipale();
   });
 // Processus principal Electron : fenêtre, accès aux données et règles serveur.
-let win;
-let activeUser = null;
-let sqliteApi = null;
-let sqliteModule = null;
-let sqliteDatabase = null;
-let sqlCipherKey = null;
-const REPORT_EDIT_WINDOW_HOURS = 8;
-const file = () => path.join(app.getPath("userData"), "rapport-cq.db");
-const oldDataFile = () => path.join(app.getPath("userData"), "rapport-cq.dat");
-const sqliteVirtualPath = "/rapport-cq.db";
-const sqlCipherEntropy = Buffer.from("RapportQuart.Cle.v1", "utf8");
-const legacyDatabase = () =>
-  path.join(
+let fenetrePrincipale;
+let utilisateurActif = null;
+let apiSqlite = null;
+let moduleSqlite = null;
+let baseSqlite = null;
+let cleSqlCipher = null;
+const DELAI_MODIFICATION_RAPPORT_HEURES = 8;
+const cheminBaseDonnees = () => chemins.join(applicationElectron.getPath("userData"), "rapport-cq.db");
+const cheminAncienFichierDonnees = () => chemins.join(applicationElectron.getPath("userData"), "rapport-cq.dat");
+const cheminVirtuelSqlite = "/rapport-cq.db";
+const entropieSqlCipher = Buffer.from("RapportQuart.Cle.v1", "utf8");
+const ancienneBaseDeDonnees = () =>
+  chemins.join(
     process.env.RAPPORT_QUART_DONNEES ||
-      path.join(process.env.ProgramData || "C:\\ProgramData", "RapportQuart"),
+      chemins.join(process.env.ProgramData || "C:\\ProgramData", "RapportQuart"),
     "rapports_quart.db",
   );
-function log(level, message) {
+function consignerEvenement(level, message) {
   try {
-    const dir = app.getPath("userData"),
-      p = path.join(dir, "journal.log");
-    fs.mkdirSync(dir, { recursive: true });
-    if (fs.existsSync(p) && fs.statSync(p).size > 1_000_000)
-      fs.renameSync(p, p + ".old");
-    fs.appendFileSync(
+    const dir = applicationElectron.getPath("userData"),
+      p = chemins.join(dir, "journal.log");
+    fichiers.mkdirSync(dir, { recursive: true });
+    if (fichiers.existsSync(p) && fichiers.statSync(p).size > 1_000_000)
+      fichiers.renameSync(p, p + ".old");
+    fichiers.appendFileSync(
       p,
       `${new Date().toISOString()} [${process.env.USERNAME || "Windows"}@${process.env.COMPUTERNAME || "PC"}] ${level} ${message}\n`,
     );
   } catch {}
 }
-let data = { users: {}, reports: [] };
-function readOldDataFile() {
+let donnees = { users: {}, reports: [] };
+function lireAncienFichierDonnees() {
   try {
-    const raw = fs.readFileSync(oldDataFile());
+    const raw = fichiers.readFileSync(cheminAncienFichierDonnees());
     const text = safeStorage.isEncryptionAvailable()
       ? safeStorage.decryptString(raw)
       : raw.toString("utf8");
-    const oldData = JSON.parse(text);
-    if (oldData && oldData.users && Array.isArray(oldData.reports))
-      return oldData;
+    const anciennesDonnees = JSON.parse(text);
+    if (anciennesDonnees && anciennesDonnees.users && Array.isArray(anciennesDonnees.reports))
+      return anciennesDonnees;
   } catch {
     // Aucun fichier .dat ou ancienne version illisible : on démarrera vide.
   }
   return null;
 }
-function readOrCreateDatabaseKey(oldData) {
+function lireOuCreerCleBase(anciennesDonnees) {
   const locations = [
     process.env.RAPPORT_QUART_DONNEES &&
-      path.join(process.env.RAPPORT_QUART_DONNEES, "cle.dat"),
-    path.join(process.env.ProgramData || "C:\\ProgramData", "RapportQuart", "cle.dat"),
-    path.join(app.getPath("userData"), "rapport-cq-sqlcipher-key.dat"),
+      chemins.join(process.env.RAPPORT_QUART_DONNEES, "cle.dat"),
+    chemins.join(process.env.ProgramData || "C:\\ProgramData", "RapportQuart", "cle.dat"),
+    chemins.join(applicationElectron.getPath("userData"), "rapport-cq-sqlcipher-key.dat"),
   ].filter(Boolean);
   const { Dpapi, isPlatformSupported } = require("@primno/dpapi");
   if (!isPlatformSupported)
     throw new Error("Le chiffrement SQLCipher de l’application requiert Windows.");
   for (const location of locations) {
-    if (!fs.existsSync(location)) continue;
+    if (!fichiers.existsSync(location)) continue;
     try {
       const key = Dpapi.unprotectData(
-        fs.readFileSync(location),
-        sqlCipherEntropy,
+        fichiers.readFileSync(location),
+        entropieSqlCipher,
         "LocalMachine",
       ).toString("utf8").trim();
       if (/^[0-9A-F]{40}$/i.test(key)) return key;
@@ -89,8 +89,8 @@ function readOrCreateDatabaseKey(oldData) {
     }
   }
   const localKeyFile = locations.at(-1);
-  const backupKey = String(oldData?.recoveryKey || "").trim().toUpperCase();
-  if (fs.existsSync(file())) {
+  const backupKey = String(anciennesDonnees?.recoveryKey || "").trim().toUpperCase();
+  if (fichiers.existsSync(cheminBaseDonnees())) {
     if (/^[0-9A-F]{40}$/.test(backupKey)) return backupKey;
     throw new Error(
       "Clé SQLCipher introuvable. Gardez le fichier de clé du poste ayant créé cette base.",
@@ -98,19 +98,19 @@ function readOrCreateDatabaseKey(oldData) {
   }
   const key = /^[0-9A-F]{40}$/.test(backupKey)
     ? backupKey
-    : crypto.randomBytes(20).toString("hex").toUpperCase();
-  fs.mkdirSync(path.dirname(localKeyFile), { recursive: true });
-  fs.writeFileSync(
+    : cryptographie.randomBytes(20).toString("hex").toUpperCase();
+  fichiers.mkdirSync(chemins.dirname(localKeyFile), { recursive: true });
+  fichiers.writeFileSync(
     localKeyFile,
-    Dpapi.protectData(Buffer.from(key, "utf8"), sqlCipherEntropy, "LocalMachine"),
+    Dpapi.protectData(Buffer.from(key, "utf8"), entropieSqlCipher, "LocalMachine"),
   );
   return key;
 }
-function readDatabaseState() {
+function lireEtatBase() {
   const result = { users: {}, reports: [], loginAttempts: {} };
-  for (const row of sqliteDatabase.query("SELECT username, password_json FROM users"))
+  for (const row of baseSqlite.query("SELECT username, password_json FROM users"))
     result.users[row.username] = JSON.parse(row.password_json);
-  for (const row of sqliteDatabase.query("SELECT report_id, report_date, shift, team, staff_total, staff_absent, production_parcels, baskets_dry, tonnage_kg, payload_json FROM reports ORDER BY report_date, shift, team")) {
+  for (const row of baseSqlite.query("SELECT report_id, report_date, shift, team, staff_total, staff_absent, production_parcels, baskets_dry, tonnage_kg, payload_json FROM reports ORDER BY report_date, shift, team")) {
     const report = JSON.parse(row.payload_json);
     report.id = row.report_id;
     report.date = row.report_date;
@@ -126,24 +126,24 @@ function readDatabaseState() {
     report.drying.basketsDry = Number(row.baskets_dry) || 0;
     result.reports.push(report);
   }
-  for (const row of sqliteDatabase.query("SELECT username, attempts, locked_until FROM login_attempts"))
+  for (const row of baseSqlite.query("SELECT username, attempts, locked_until FROM login_attempts"))
     result.loginAttempts[row.username] = {
       count: Number(row.attempts) || 0,
       until: Number(row.locked_until) || 0,
     };
-  for (const row of sqliteDatabase.query("SELECT setting, value_json FROM app_settings"))
+  for (const row of baseSqlite.query("SELECT setting, value_json FROM app_settings"))
     result[row.setting] = JSON.parse(row.value_json);
   return result;
 }
-function writeDatabaseState() {
-  if (!sqliteDatabase) throw new Error("La base SQLCipher n’est pas ouverte.");
-  sqliteDatabase.exec("BEGIN IMMEDIATE TRANSACTION");
+function ecrireEtatBase() {
+  if (!baseSqlite) throw new Error("La base SQLCipher n’est pas ouverte.");
+  baseSqlite.exec("BEGIN IMMEDIATE TRANSACTION");
   try {
-    sqliteDatabase.exec("DELETE FROM users; DELETE FROM reports; DELETE FROM login_attempts; DELETE FROM app_settings");
-    for (const [username, password] of Object.entries(data.users || {}))
-      sqliteDatabase.query("INSERT INTO users (username, password_json) VALUES (?, ?)", [username, JSON.stringify(password)]);
-    for (const report of data.reports || [])
-      sqliteDatabase.query(
+    baseSqlite.exec("DELETE FROM users; DELETE FROM reports; DELETE FROM login_attempts; DELETE FROM app_settings");
+    for (const [username, password] of Object.entries(donnees.users || {}))
+      baseSqlite.query("INSERT INTO users (username, password_json) VALUES (?, ?)", [username, JSON.stringify(password)]);
+    for (const report of donnees.reports || [])
+      baseSqlite.query(
         "INSERT INTO reports (report_id, report_date, shift, team, staff_total, staff_absent, production_parcels, baskets_dry, tonnage_kg, payload_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
           report.id,
@@ -158,38 +158,38 @@ function writeDatabaseState() {
           JSON.stringify(report),
         ],
       );
-    for (const [username, attempt] of Object.entries(data.loginAttempts || {}))
-      sqliteDatabase.query("INSERT INTO login_attempts (username, attempts, locked_until) VALUES (?, ?, ?)", [username, Number(attempt.count) || 0, Number(attempt.until) || 0]);
+    for (const [username, attempt] of Object.entries(donnees.loginAttempts || {}))
+      baseSqlite.query("INSERT INTO login_attempts (username, attempts, locked_until) VALUES (?, ?, ?)", [username, Number(attempt.count) || 0, Number(attempt.until) || 0]);
     for (const setting of ["recoveryKey", "recoveryAcknowledged", "legacyConnected"])
-      if (data[setting] !== undefined)
-        sqliteDatabase.query("INSERT INTO app_settings (setting, value_json) VALUES (?, ?)", [setting, JSON.stringify(data[setting])]);
-    sqliteDatabase.exec("COMMIT");
+      if (donnees[setting] !== undefined)
+        baseSqlite.query("INSERT INTO app_settings (setting, value_json) VALUES (?, ?)", [setting, JSON.stringify(donnees[setting])]);
+    baseSqlite.exec("COMMIT");
   } catch (error) {
-    try { sqliteDatabase.exec("ROLLBACK"); } catch {}
+    try { baseSqlite.exec("ROLLBACK"); } catch {}
     throw error;
   }
-  sqliteDatabase.close();
-  sqliteDatabase = null;
-  const bytes = Buffer.from(sqliteModule.FS.readFile(sqliteVirtualPath));
-  const target = file();
+  baseSqlite.close();
+  baseSqlite = null;
+  const bytes = Buffer.from(moduleSqlite.FS.readFile(cheminVirtuelSqlite));
+  const target = cheminBaseDonnees();
   const temporary = `${target}.${process.pid}.tmp`;
-  fs.writeFileSync(temporary, bytes);
-  fs.renameSync(temporary, target);
-  sqliteDatabase = sqliteApi.open(sqliteVirtualPath, sqlCipherKey);
-  sqliteDatabase.exec("PRAGMA cipher_compatibility = 4");
+  fichiers.writeFileSync(temporary, bytes);
+  fichiers.renameSync(temporary, target);
+  baseSqlite = apiSqlite.open(cheminVirtuelSqlite, cleSqlCipher);
+  baseSqlite.exec("PRAGMA cipher_compatibility = 4");
 }
-async function load() {
-  const oldData = readOldDataFile();
-  sqlCipherKey = readOrCreateDatabaseKey(oldData);
+async function chargerBase() {
+  const anciennesDonnees = lireAncienFichierDonnees();
+  cleSqlCipher = lireOuCreerCleBase(anciennesDonnees);
   const { initSQLite } = require("@7mind.io/sqlcipher-wasm");
-  sqliteApi = await initSQLite();
-  sqliteModule = sqliteApi.getModule();
-  const databaseExisted = fs.existsSync(file());
+  apiSqlite = await initSQLite();
+  moduleSqlite = apiSqlite.getModule();
+  const databaseExisted = fichiers.existsSync(cheminBaseDonnees());
   if (databaseExisted)
-    sqliteModule.FS.writeFile(sqliteVirtualPath, fs.readFileSync(file()));
-  sqliteDatabase = sqliteApi.open(sqliteVirtualPath, sqlCipherKey);
-  sqliteDatabase.exec("PRAGMA cipher_compatibility = 4");
-  sqliteDatabase.exec(`
+    moduleSqlite.FS.writeFile(cheminVirtuelSqlite, fichiers.readFileSync(cheminBaseDonnees()));
+  baseSqlite = apiSqlite.open(cheminVirtuelSqlite, cleSqlCipher);
+  baseSqlite.exec("PRAGMA cipher_compatibility = 4");
+  baseSqlite.exec(`
     CREATE TABLE IF NOT EXISTS users (
       username TEXT PRIMARY KEY,
       password_json TEXT NOT NULL
@@ -216,9 +216,9 @@ async function load() {
       value_json TEXT NOT NULL
     );
   `);
-  data = databaseExisted
-    ? readDatabaseState()
-    : oldData || {
+  donnees = databaseExisted
+    ? lireEtatBase()
+    : anciennesDonnees || {
         users: {},
         reports: [],
         loginAttempts: {},
@@ -226,49 +226,49 @@ async function load() {
         // pourra toujours être lancé explicitement par l'administrateur.
         legacyConnected: true,
       };
-  data.users ||= {};
-  data.reports ||= [];
-  data.loginAttempts ||= {};
-  if (!data.recoveryKey) {
-    data.recoveryKey = crypto.randomBytes(20).toString("hex").toUpperCase();
-    data.recoveryAcknowledged = false;
+  donnees.users ||= {};
+  donnees.reports ||= [];
+  donnees.loginAttempts ||= {};
+  if (!donnees.recoveryKey) {
+    donnees.recoveryKey = cryptographie.randomBytes(20).toString("hex").toUpperCase();
+    donnees.recoveryAcknowledged = false;
   }
-  if (!databaseExisted || !sqliteDatabase.query("SELECT 1 FROM app_settings WHERE setting = 'recoveryKey'").length)
-    writeDatabaseState();
+  if (!databaseExisted || !baseSqlite.query("SELECT 1 FROM app_settings WHERE setting = 'recoveryKey'").length)
+    ecrireEtatBase();
 }
-function save() {
-  fs.mkdirSync(app.getPath("userData"), { recursive: true });
-  writeDatabaseState();
+function sauvegarderBase() {
+  fichiers.mkdirSync(applicationElectron.getPath("userData"), { recursive: true });
+  ecrireEtatBase();
 }
 // Recharge le fichier partagé sans perdre la dernière copie valide en mémoire.
-function refreshSharedData() {
-  const previousBytes = sqliteModule &&
-    Buffer.from(sqliteModule.FS.readFile(sqliteVirtualPath));
+function actualiserDonneesPartagees() {
+  const previousBytes = moduleSqlite &&
+    Buffer.from(moduleSqlite.FS.readFile(cheminVirtuelSqlite));
   try {
-    if (!fs.existsSync(file())) return false;
-    if (sqliteDatabase) sqliteDatabase.close();
-    sqliteModule.FS.writeFile(sqliteVirtualPath, fs.readFileSync(file()));
-    sqliteDatabase = sqliteApi.open(sqliteVirtualPath, sqlCipherKey);
-    sqliteDatabase.exec("PRAGMA cipher_compatibility = 4");
-    const latest = readDatabaseState();
+    if (!fichiers.existsSync(cheminBaseDonnees())) return false;
+    if (baseSqlite) baseSqlite.close();
+    moduleSqlite.FS.writeFile(cheminVirtuelSqlite, fichiers.readFileSync(cheminBaseDonnees()));
+    baseSqlite = apiSqlite.open(cheminVirtuelSqlite, cleSqlCipher);
+    baseSqlite.exec("PRAGMA cipher_compatibility = 4");
+    const latest = lireEtatBase();
     if (!latest || !latest.users || !Array.isArray(latest.reports)) return false;
-    data = latest;
+    donnees = latest;
     return true;
   } catch {
     // Si une édition externe est incomplète, on rouvre la dernière image valide.
     try {
       if (previousBytes) {
-        sqliteModule.FS.writeFile(sqliteVirtualPath, previousBytes);
-        sqliteDatabase = sqliteApi.open(sqliteVirtualPath, sqlCipherKey);
-        sqliteDatabase.exec("PRAGMA cipher_compatibility = 4");
+        moduleSqlite.FS.writeFile(cheminVirtuelSqlite, previousBytes);
+        baseSqlite = apiSqlite.open(cheminVirtuelSqlite, cleSqlCipher);
+        baseSqlite.exec("PRAGMA cipher_compatibility = 4");
       }
     } catch {
-      sqliteDatabase = null;
+      baseSqlite = null;
     }
     return false;
   }
 }
-function clockMinutes(value) {
+function heureEnMinutes(value) {
   const match = String(value ?? "")
     .trim()
     .match(/^(\d{1,2})\s*[:hH.]\s*(\d{0,2})$/);
@@ -278,7 +278,7 @@ function clockMinutes(value) {
   return hour <= 23 && minute <= 59 ? hour * 60 + minute : null;
 }
 // Vérifie l’ordre des heures côté serveur, même si l’interface est contournée.
-function validateReportTimeRanges(report) {
+function validerPlagesHorairesRapport(report) {
   const intervals = [
     ...(report.stops || []).map((stop) => ({
       ...stop,
@@ -290,17 +290,17 @@ function validateReportTimeRanges(report) {
         label: `l’arrêt du séchoir ${dryer.number}`,
       })),
     ),
-    ...Object.entries(report.generators || {}).flatMap(([name, periods]) =>
-      (periods || []).map((period) => ({
-        ...period,
+    ...Object.entries(report.generators || {}).flatMap(([name, periodes]) =>
+      (periodes || []).map((periode) => ({
+        ...periode,
         label: `la période du ${name}`,
       })),
     ),
   ];
   for (const interval of intervals) {
     if (!interval.start && !interval.end) continue;
-    const start = clockMinutes(interval.start),
-      end = clockMinutes(interval.end);
+    const start = heureEnMinutes(interval.start),
+      end = heureEnMinutes(interval.end);
     if (start === null || end === null)
       throw new Error(
         `Heure invalide pour ${interval.label}. Saisissez une heure comme 07H30.`,
@@ -311,29 +311,29 @@ function validateReportTimeRanges(report) {
       );
   }
 }
-function legacyHash(p) {
-  return crypto.scryptSync(p, "rapport-cq-js-v1", 64).toString("hex");
+function hachageAncienMotDePasse(p) {
+  return cryptographie.scryptSync(p, "rapport-cq-js-v1", 64).toString("hex");
 }
-function makePassword(p) {
-  const salt = crypto.randomBytes(16);
+function creerMotDePasse(p) {
+  const salt = cryptographie.randomBytes(16);
   return {
     salt: salt.toString("hex"),
-    hash: crypto.pbkdf2Sync(p, salt, 200000, 32, "sha256").toString("hex"),
+    hash: cryptographie.pbkdf2Sync(p, salt, 200000, 32, "sha256").toString("hex"),
     iterations: 200000,
     failures: 0,
     lockedUntil: 0,
   };
 }
-function verifyPassword(stored, p) {
+function verifierMotDePasse(stored, p) {
   if (typeof stored === "string")
-    return { ok: stored === legacyHash(p), upgrade: stored === legacyHash(p) };
+    return { ok: stored === hachageAncienMotDePasse(p), upgrade: stored === hachageAncienMotDePasse(p) };
   if (!stored?.salt || !stored?.hash) return { ok: false };
   const iterations = Math.max(
       100000,
       Math.min(1000000, Number(stored.iterations) || 200000),
     ),
     expected = Buffer.from(stored.hash, "hex"),
-    actual = crypto.pbkdf2Sync(
+    actual = cryptographie.pbkdf2Sync(
       p,
       Buffer.from(stored.salt, "hex"),
       iterations,
@@ -343,59 +343,59 @@ function verifyPassword(stored, p) {
   return {
     ok:
       expected.length === actual.length &&
-      crypto.timingSafeEqual(expected, actual),
+      cryptographie.timingSafeEqual(expected, actual),
   };
 }
-function backupDaily() {
-  if (!fs.existsSync(file())) return;
-  const dir = path.join(app.getPath("userData"), "Sauvegardes");
-  fs.mkdirSync(dir, { recursive: true });
+function sauvegarderChaqueJour() {
+  if (!fichiers.existsSync(cheminBaseDonnees())) return;
+  const dir = chemins.join(applicationElectron.getPath("userData"), "Sauvegardes");
+  fichiers.mkdirSync(dir, { recursive: true });
   const today = new Date().toISOString().slice(0, 10).replaceAll("-", "");
-  const target = path.join(dir, `rapport-cq-${today}.db`);
-  if (!fs.existsSync(target)) fs.copyFileSync(file(), target);
-  const files = fs
+  const target = chemins.join(dir, `rapport-cq-${today}.db`);
+  if (!fichiers.existsSync(target)) fichiers.copyFileSync(cheminBaseDonnees(), target);
+  const files = fichiers
     .readdirSync(dir)
-    .map((n) => path.join(dir, n))
-    .filter((n) => fs.statSync(n).isFile())
-    .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-  files.slice(30).forEach((n) => fs.unlinkSync(n));
+    .map((n) => chemins.join(dir, n))
+    .filter((n) => fichiers.statSync(n).isFile())
+    .sort((a, b) => fichiers.statSync(b).mtimeMs - fichiers.statSync(a).mtimeMs);
+  files.slice(30).forEach((n) => fichiers.unlinkSync(n));
 }
 ipcMain.handle("bootstrap", () => {
   // Chaque actualisation relit les changements enregistrés par les autres fenêtres.
-  refreshSharedData();
-  const admin = activeUser === "Administrateur",
-    logged = !!activeUser;
+  actualiserDonneesPartagees();
+  const admin = utilisateurActif === "Administrateur",
+    logged = !!utilisateurActif;
   return {
-    users: Object.keys(data.users),
+    users: Object.keys(donnees.users),
     teams: {
       A: "KONAN LUC",
       B: "EYO NESTOR",
       C: "DAMEY JEAN-BAPTISTE",
       D: "TIA LOU EDWIGE",
     },
-    reports: logged ? data.reports : [],
-    adminSet: !!data.users.Administrateur,
-    recoveryKey: data.recoveryAcknowledged ? null : data.recoveryKey,
-    recoveryKeyForSetup: data.users.Administrateur ? null : data.recoveryKey,
-    legacyAvailable: admin && fs.existsSync(legacyDatabase()),
-    legacyConnected: !!data.legacyConnected,
+    reports: logged ? donnees.reports : [],
+    adminSet: !!donnees.users.Administrateur,
+    recoveryKey: donnees.recoveryAcknowledged ? null : donnees.recoveryKey,
+    recoveryKeyForSetup: donnees.users.Administrateur ? null : donnees.recoveryKey,
+    legacyAvailable: admin && fichiers.existsSync(ancienneBaseDeDonnees()),
+    legacyConnected: !!donnees.legacyConnected,
   };
 });
 ipcMain.handle("ack-recovery", () => {
-  data.recoveryAcknowledged = true;
-  save();
+  donnees.recoveryAcknowledged = true;
+  sauvegarderBase();
   return true;
 });
 ipcMain.handle("auth", (_, { user, password, confirmation, recoveryKey }) => {
   if (!user || !password)
     return { ok: false, message: "Saisissez le mot de passe." };
-  const existing = data.users[user];
-  if (!existing) {
+  const rapportExistant = donnees.users[user];
+  if (!rapportExistant) {
     if (user === "Administrateur") {
       if (
         String(recoveryKey || "")
           .trim()
-          .toUpperCase() !== data.recoveryKey
+          .toUpperCase() !== donnees.recoveryKey
       )
         return { ok: false, message: "Clé de récupération incorrecte." };
       if (password !== confirmation)
@@ -431,56 +431,56 @@ ipcMain.handle("auth", (_, { user, password, confirmation, recoveryKey }) => {
           message: "Le mot de passe doit contenir de 6 à 64 caractères.",
         };
     }
-    data.users[user] = makePassword(password);
-    save();
-    activeUser = user;
-    log("INFO", `Initialisation et connexion autorisées (${user})`);
+    donnees.users[user] = creerMotDePasse(password);
+    sauvegarderBase();
+    utilisateurActif = user;
+    consignerEvenement("INFO", `Initialisation et connexion autorisées (${user})`);
     return { ok: true, first: true, user };
   }
-  const attempt = data.loginAttempts[user] || { count: 0, until: 0 };
+  const attempt = donnees.loginAttempts[user] || { count: 0, until: 0 };
   if (attempt.until > Date.now())
     return {
       ok: false,
       message: `Trop de tentatives. Réessayez après ${new Date(attempt.until).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}.`,
     };
-  if (existing.lockedUntil > Date.now())
+  if (rapportExistant.lockedUntil > Date.now())
     return {
       ok: false,
-      message: `Trop de tentatives. Réessayez après ${new Date(existing.lockedUntil).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}.`,
+      message: `Trop de tentatives. Réessayez après ${new Date(rapportExistant.lockedUntil).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}.`,
     };
-  const checked = verifyPassword(existing, password);
+  const checked = verifierMotDePasse(rapportExistant, password);
   if (!checked.ok) {
     attempt.count++;
-    if (typeof existing === "object") {
-      existing.failures = (existing.failures || 0) + 1;
-      if (existing.failures >= 5) {
-        existing.lockedUntil = Date.now() + 15 * 60 * 1000;
-        existing.failures = 0;
+    if (typeof rapportExistant === "object") {
+      rapportExistant.failures = (rapportExistant.failures || 0) + 1;
+      if (rapportExistant.failures >= 5) {
+        rapportExistant.lockedUntil = Date.now() + 15 * 60 * 1000;
+        rapportExistant.failures = 0;
       }
     }
     if (attempt.count >= 5) {
       attempt.count = 0;
       attempt.until = Date.now() + 15 * 60 * 1000;
     }
-    data.loginAttempts[user] = attempt;
-    save();
-    log("INFO", `Échec de connexion (${user})`);
+    donnees.loginAttempts[user] = attempt;
+    sauvegarderBase();
+    consignerEvenement("INFO", `Échec de connexion (${user})`);
     return {
       ok: false,
       message:
-        attempt.until || existing.lockedUntil
+        attempt.until || rapportExistant.lockedUntil
           ? "Trop de tentatives. Réessayez dans 15 minutes."
           : "Mot de passe incorrect.",
     };
   }
-  if (checked.upgrade) data.users[user] = makePassword(password);
-  if (typeof data.users[user] === "object") {
-    data.users[user].failures = 0;
-    data.users[user].lockedUntil = 0;
+  if (checked.upgrade) donnees.users[user] = creerMotDePasse(password);
+  if (typeof donnees.users[user] === "object") {
+    donnees.users[user].failures = 0;
+    donnees.users[user].lockedUntil = 0;
   }
-  data.loginAttempts[user] = { count: 0, until: 0 };
-  activeUser = user;
-  log("INFO", `Connexion autorisée (${user})`);
+  donnees.loginAttempts[user] = { count: 0, until: 0 };
+  utilisateurActif = user;
+  consignerEvenement("INFO", `Connexion autorisée (${user})`);
   return { ok: true, user };
 });
 ipcMain.handle(
@@ -493,7 +493,7 @@ ipcMain.handle(
     if (
       String(recoveryKey || "")
         .trim()
-        .toUpperCase() !== data.recoveryKey
+        .toUpperCase() !== donnees.recoveryKey
     )
       throw new Error("Clé de récupération incorrecte.");
     if (next !== confirmation)
@@ -504,23 +504,23 @@ ipcMain.handle(
       /[\x00-\x1f\x7f]/.test(next)
     )
       throw new Error("Le mot de passe doit contenir de 6 à 64 caractères.");
-    data.users[user] = makePassword(next);
-    data.loginAttempts[user] = { count: 0, until: 0 };
-    save();
+    donnees.users[user] = creerMotDePasse(next);
+    donnees.loginAttempts[user] = { count: 0, until: 0 };
+    sauvegarderBase();
     return true;
   },
 );
-function focusMainWindow() {
+function activerFenetrePrincipale() {
   return new Promise((resolve) => {
     const focus = () => {
-      if (!win || win.isDestroyed()) return false;
-      if (win.isMinimized()) win.restore();
-      if (!win.isVisible()) win.show();
+      if (!fenetrePrincipale || fenetrePrincipale.isDestroyed()) return false;
+      if (fenetrePrincipale.isMinimized()) fenetrePrincipale.restore();
+      if (!fenetrePrincipale.isVisible()) fenetrePrincipale.show();
       try {
-        app.focus({ steal: true });
+        applicationElectron.focus({ steal: true });
       } catch {}
-      win.focus();
-      win.webContents.focus();
+      fenetrePrincipale.focus();
+      fenetrePrincipale.webContents.focus();
       return true;
     };
 
@@ -531,18 +531,18 @@ function focusMainWindow() {
   });
 }
 ipcMain.handle("logout", async () => {
-  log("INFO", `Session fermée (${activeUser || "inconnue"})`);
-  activeUser = null;
+  consignerEvenement("INFO", `Session fermée (${utilisateurActif || "inconnue"})`);
+  utilisateurActif = null;
   // L’interface affiche d’abord le formulaire de connexion, puis le renderer
   // demande le focus. Re-focaliser ici ciblait parfois le document précédent.
   return true;
 });
-ipcMain.handle("focus-app", () => focusMainWindow());
+ipcMain.handle("focus-applicationElectron", () => activerFenetrePrincipale());
 ipcMain.handle("change-password", (_, { current, next }) => {
-  if (!activeUser) throw new Error("Aucun profil connecté.");
-  if (!verifyPassword(data.users[activeUser], current || "").ok)
+  if (!utilisateurActif) throw new Error("Aucun profil connecté.");
+  if (!verifierMotDePasse(donnees.users[utilisateurActif], current || "").ok)
     throw new Error("Le mot de passe actuel est incorrect.");
-  const minimum = activeUser === "Administrateur" ? 8 : 6;
+  const minimum = utilisateurActif === "Administrateur" ? 8 : 6;
   if (
     String(next || "").length < minimum ||
     String(next || "").length > 64 ||
@@ -551,26 +551,26 @@ ipcMain.handle("change-password", (_, { current, next }) => {
     throw new Error(
       `Le nouveau mot de passe doit contenir de ${minimum} à 64 caractères.`,
     );
-  data.users[activeUser] = makePassword(next);
-  save();
+  donnees.users[utilisateurActif] = creerMotDePasse(next);
+  sauvegarderBase();
   return true;
 });
 ipcMain.handle("capture-synthesis", async (_, rect) => {
-  if (!activeUser) throw new Error("Connectez-vous pour capturer la synthèse.");
-  const report = data.reports.find((item) => item.id === rect?.reportId);
+  if (!utilisateurActif) throw new Error("Connectez-vous pour capturer la synthèse.");
+  const report = donnees.reports.find((item) => item.id === rect?.reportId);
   if (!report) throw new Error("Le rapport à capturer est introuvable.");
   if (
-    activeUser !== "Administrateur" &&
-    report.team !== activeUser
+    utilisateurActif !== "Administrateur" &&
+    report.team !== utilisateurActif
   )
     throw new Error("Vous pouvez capturer uniquement le rapport de votre équipe.");
-  const root = path.join(app.getPath("documents"), "RapportQuart", "Captures");
+  const root = chemins.join(applicationElectron.getPath("documents"), "RapportQuart", "Captures");
   // Chaque image va dans le dossier de l’équipe du rapport, même si
   // l’administrateur a déclenché la capture depuis l’historique.
-  const dir = path.join(root, `Equipe-${report.team}`);
+  const dir = chemins.join(root, `Equipe-${report.team}`);
   for (const team of ["A", "B", "C", "D"])
-    fs.mkdirSync(path.join(root, `Equipe-${team}`), { recursive: true });
-  fs.mkdirSync(dir, { recursive: true });
+    fichiers.mkdirSync(chemins.join(root, `Equipe-${team}`), { recursive: true });
+  fichiers.mkdirSync(dir, { recursive: true });
   const safe = Object.fromEntries(
     ["x", "y", "width", "height"].map((k) => [
       k,
@@ -579,54 +579,54 @@ ipcMain.handle("capture-synthesis", async (_, rect) => {
   );
   if (!safe.width || !safe.height)
     throw new Error("La synthèse n’est pas visible.");
-  const image = await win.webContents.capturePage(safe);
-  const requestedName = path.basename(String(rect?.name || ""));
+  const image = await fenetrePrincipale.webContents.capturePage(safe);
+  const requestedName = chemins.basename(String(rect?.name || ""));
   const name = /^[\w .-]+\.png$/i.test(requestedName)
     ? requestedName
     : `Synthese_${new Date().toISOString().replace(/[:.]/g, "-")}.png`;
-  const target = path.join(dir, name);
-  fs.writeFileSync(target, image.toPNG());
+  const target = chemins.join(dir, name);
+  fichiers.writeFileSync(target, image.toPNG());
   return target;
 });
 ipcMain.handle("open-captures", async () => {
-  if (!activeUser) throw new Error("Connectez-vous pour ouvrir le dossier.");
-  if (activeUser !== "Administrateur" && !["A", "B", "C", "D"].includes(activeUser))
+  if (!utilisateurActif) throw new Error("Connectez-vous pour ouvrir le dossier.");
+  if (utilisateurActif !== "Administrateur" && !["A", "B", "C", "D"].includes(utilisateurActif))
     throw new Error("Profil non autorisé à ouvrir un dossier de capture.");
-  const root = path.join(app.getPath("documents"), "RapportQuart", "Captures");
+  const root = chemins.join(applicationElectron.getPath("documents"), "RapportQuart", "Captures");
   const dir =
-    activeUser === "Administrateur"
+    utilisateurActif === "Administrateur"
       ? root
-      : path.join(root, `Equipe-${activeUser}`);
-  fs.mkdirSync(dir, { recursive: true });
+      : chemins.join(root, `Equipe-${utilisateurActif}`);
+  fichiers.mkdirSync(dir, { recursive: true });
   return shell.openPath(dir);
 });
 ipcMain.handle("import-legacy-db", async (_, options = {}) => {
-  if (activeUser !== "Administrateur")
+  if (utilisateurActif !== "Administrateur")
     throw new Error("Import réservé à l’administrateur.");
   const automatic = options?.automatic === true;
-  if (automatic && data.legacyConnected && !options?.force)
+  if (automatic && donnees.legacyConnected && !options?.force)
     return { imported: 0, alreadyConnected: true };
-  const fixedPath = legacyDatabase();
-  if (automatic && !fs.existsSync(fixedPath))
+  const fixedPath = ancienneBaseDeDonnees();
+  if (automatic && !fichiers.existsSync(fixedPath))
     throw new Error(`Ancienne base introuvable : ${fixedPath}`);
   const picked = automatic
     ? { canceled: false, filePaths: [fixedPath] }
-    : await dialog.showOpenDialog(win, {
-        defaultPath: fs.existsSync(fixedPath) ? fixedPath : undefined,
+    : await dialog.showOpenDialog(fenetrePrincipale, {
+        defaultPath: fichiers.existsSync(fixedPath) ? fixedPath : undefined,
         properties: ["openFile"],
         filters: [
           { name: "Base SQLite", extensions: ["db", "sqlite", "sqlite3"] },
         ],
       });
   if (picked.canceled || !picked.filePaths[0]) return false;
-  const bytes = fs.readFileSync(picked.filePaths[0]);
+  const bytes = fichiers.readFileSync(picked.filePaths[0]);
   let legacy, table, hasTable, sqlRows;
   const sqliteHeader = Buffer.from("SQLite format 3\0");
   if (bytes.subarray(0, sqliteHeader.length).equals(sqliteHeader)) {
     try {
       const SQL = await require("sql.js")({
         locateFile: (n) =>
-          path.join(path.dirname(require.resolve("sql.js")), n),
+          chemins.join(chemins.dirname(require.resolve("sql.js")), n),
       });
       legacy = new SQL.Database(bytes);
       sqlRows = (sql) => {
@@ -654,16 +654,16 @@ ipcMain.handle("import-legacy-db", async (_, options = {}) => {
   } else {
     let keyFile = [
       process.env.RAPPORT_QUART_DONNEES &&
-        path.join(process.env.RAPPORT_QUART_DONNEES, "cle.dat"),
-      path.join(
+        chemins.join(process.env.RAPPORT_QUART_DONNEES, "cle.dat"),
+      chemins.join(
         process.env.ProgramData || "C:\\ProgramData",
         "RapportQuart",
         "cle.dat",
       ),
-      path.join(path.dirname(picked.filePaths[0]), "cle.dat"),
-    ].find((p) => p && fs.existsSync(p));
+      chemins.join(chemins.dirname(picked.filePaths[0]), "cle.dat"),
+    ].find((p) => p && fichiers.existsSync(p));
     if (!keyFile) {
-      const keyPick = await dialog.showOpenDialog(win, {
+      const keyPick = await dialog.showOpenDialog(fenetrePrincipale, {
         properties: ["openFile"],
         filters: [
           { name: "Clé de chiffrement C# (cle.dat)", extensions: ["dat"] },
@@ -681,7 +681,7 @@ ipcMain.handle("import-legacy-db", async (_, options = {}) => {
       if (!isPlatformSupported) throw new Error("DPAPI Windows indisponible");
       key = Buffer.from(
         Dpapi.unprotectData(
-          fs.readFileSync(keyFile),
+          fichiers.readFileSync(keyFile),
           Buffer.from("RapportQuart.Cle.v1", "utf8"),
           "LocalMachine",
         ),
@@ -773,7 +773,7 @@ ipcMain.handle("import-legacy-db", async (_, options = {}) => {
   });
   for (const x of reports) {
     const id = x.id || `${x.date}_${x.quart}_${x.equipe}`;
-    if (data.reports.some((r) => r.id === id)) continue;
+    if (donnees.reports.some((r) => r.id === id)) continue;
     const ds = dryerById.get(id) || [];
     for (const n of [1, 2, 3])
       if (!ds.some((d) => d.number === n))
@@ -804,12 +804,12 @@ ipcMain.handle("import-legacy-db", async (_, options = {}) => {
         staff: {
           total: num(x.effectif_total),
           absent: num(x.absent),
-          sick: num(x.malade),
+          malade: num(x.malade),
           permission: num(x.permission),
-          leave: num(x.conge),
+          conge: num(x.conge),
           accidents: num(x.accident),
         },
-        prewash: {
+        prelavage: {
           box: x.box_prelave || "",
           buckets: num(x.godets),
           secondBox: x.box_prelave2 || "",
@@ -841,7 +841,7 @@ ipcMain.handle("import-legacy-db", async (_, options = {}) => {
           ? new Date(x.cree_le).toISOString()
           : new Date().toISOString(),
       };
-    data.reports.push(r);
+    donnees.reports.push(r);
     imported++;
   }
   const safeSql = (sql) => {
@@ -854,8 +854,8 @@ ipcMain.handle("import-legacy-db", async (_, options = {}) => {
   for (const x of safeSql(
     "SELECT code, hex(sel) AS sel_hex, hex(hash) AS hash_hex, iterations, echecs, bloque_jusqua FROM equipe_acces",
   )) {
-    if (!data.users[x.code] && x.sel_hex && x.hash_hex)
-      data.users[x.code] = {
+    if (!donnees.users[x.code] && x.sel_hex && x.hash_hex)
+      donnees.users[x.code] = {
         salt: x.sel_hex.toLowerCase(),
         hash: x.hash_hex.toLowerCase(),
         iterations: num(x.iterations, 200000),
@@ -867,11 +867,11 @@ ipcMain.handle("import-legacy-db", async (_, options = {}) => {
     "SELECT hex(sel) AS sel_hex, hex(hash) AS hash_hex, iterations, echecs, bloque_jusqua FROM administrateur_acces WHERE id=1",
   )[0];
   if (
-    !data.users.Administrateur &&
+    !donnees.users.Administrateur &&
     adminAccess?.sel_hex &&
     adminAccess?.hash_hex
   )
-    data.users.Administrateur = {
+    donnees.users.Administrateur = {
       salt: adminAccess.sel_hex.toLowerCase(),
       hash: adminAccess.hash_hex.toLowerCase(),
       iterations: num(adminAccess.iterations, 200000),
@@ -881,59 +881,59 @@ ipcMain.handle("import-legacy-db", async (_, options = {}) => {
         : 0,
     };
   legacy.close();
-  if (automatic) data.legacyConnected = true;
-  save();
-  log("INFO", `${imported} rapport(s) importé(s) depuis une sauvegarde C#`);
+  if (automatic) donnees.legacyConnected = true;
+  sauvegarderBase();
+  consignerEvenement("INFO", `${imported} rapport(s) importé(s) depuis une sauvegarde C#`);
   return { imported };
 });
 ipcMain.handle("save-report", (_, report) => {
-  if (!activeUser) throw new Error("La session a expiré. Reconnectez-vous.");
-  if (activeUser === "Administrateur")
+  if (!utilisateurActif) throw new Error("La session a expiré. Reconnectez-vous.");
+  if (utilisateurActif === "Administrateur")
     throw new Error(
       "Seuls les utilisateurs d’équipe peuvent créer des rapports.",
     );
   // Vérifie les doublons contre la dernière version partagée des données.
-  refreshSharedData();
+  actualiserDonneesPartagees();
   if (!report.date || !report.shift || !report.team)
     throw new Error("Date, quart et équipe obligatoires.");
-  validateReportTimeRanges(report);
+  validerPlagesHorairesRapport(report);
   if ((report.drying?.dryers || []).some((dryer) => [dryer.burner1, dryer.burner2].some((value) => Number(value) < 0 || Number(value) > 130)))
     throw new Error("Les valeurs des brûleurs doivent être comprises entre 0 et 130.");
-  if (activeUser !== "Administrateur" && activeUser !== report.team)
+  if (utilisateurActif !== "Administrateur" && utilisateurActif !== report.team)
     throw new Error(
       "Vous ne pouvez enregistrer que les rapports de votre équipe.",
     );
   report.id = `${report.date}_${report.shift}_${report.team}`;
-  const sameSlot = data.reports.find(
+  const sameSlot = donnees.reports.find(
     (saved) => saved.date === report.date && saved.shift === report.shift && saved.id !== report.id,
   );
   if (sameSlot)
     throw new Error(
       `Un rapport existe déjà pour cette date et ce quart (équipe ${sameSlot.team}).`,
     );
-  const oldIndex = data.reports.findIndex((r) => r.id === report.id);
-  const old = oldIndex >= 0 ? data.reports[oldIndex] : null;
-  if (old && activeUser !== "Administrateur") {
+  const oldIndex = donnees.reports.findIndex((r) => r.id === report.id);
+  const old = oldIndex >= 0 ? donnees.reports[oldIndex] : null;
+  if (old && utilisateurActif !== "Administrateur") {
     const created = Date.parse(old.createdAt || "");
     if (
       !Number.isFinite(created) ||
-      Date.now() - created > REPORT_EDIT_WINDOW_HOURS * 60 * 60 * 1000
+      Date.now() - created > DELAI_MODIFICATION_RAPPORT_HEURES * 60 * 60 * 1000
     )
       throw new Error(
-        `Modification impossible : le délai de ${REPORT_EDIT_WINDOW_HOURS} heures après la création de ce rapport est dépassé ou indisponible. Contactez l’administrateur si une correction est nécessaire.`,
+        `Modification impossible : le délai de ${DELAI_MODIFICATION_RAPPORT_HEURES} heures après la création de ce rapport est dépassé ou indisponible. Contactez l’administrateur si une correction est nécessaire.`,
       );
   }
   report.createdAt = old?.createdAt || new Date().toISOString();
   report.updatedAt = new Date().toISOString();
-  if (old) data.reports.splice(oldIndex, 1);
-  data.reports.push(report);
-  save();
+  if (old) donnees.reports.splice(oldIndex, 1);
+  donnees.reports.push(report);
+  sauvegarderBase();
   return report;
 });
 ipcMain.handle("export-xlsx", async (_, { name, rows }) => {
-  if (activeUser !== "Administrateur")
+  if (utilisateurActif !== "Administrateur")
     throw new Error("Action réservée à l’administrateur.");
-  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+  const { canceled, filePath } = await dialog.showSaveDialog(fenetrePrincipale, {
     defaultPath: name,
     filters: [{ name: "Classeur Excel", extensions: ["xlsx"] }],
   });
@@ -952,39 +952,50 @@ ipcMain.handle("export-xlsx", async (_, { name, rows }) => {
   XLSX.writeFile(wb, filePath);
   return true;
 });
-function createWindow() {
+function creerFenetrePrincipale() {
   const { width: screenWidth, height: screenHeight } =
     screen.getPrimaryDisplay().workAreaSize;
-  win = new BrowserWindow({
+  fenetrePrincipale = new BrowserWindow({
     width: Math.min(1440, screenWidth),
     height: Math.min(920, screenHeight),
     minWidth: Math.min(800, screenWidth),
     minHeight: Math.min(600, screenHeight),
     autoHideMenuBar: true,
-    icon: path.join(__dirname, "../assets/exat_agri_fb.ico"),
+    icon: chemins.join(__dirname, "../assets/exat_agri_fb.ico"),
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: chemins.join(__dirname, "prechargement.js"),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
-  win.loadFile(path.join(__dirname, "index.html"));
+  fenetrePrincipale.webContents.on("did-fail-load", (_evenement, codeErreur, detailErreur, adresse, cadrePrincipal) => {
+    if (cadrePrincipal)
+      consignerEvenement("ERREUR_INTERFACE", `Chargement impossible (${codeErreur}) ${detailErreur} — ${adresse}`);
+  });
+  fenetrePrincipale.webContents.on("console-message", (_evenement, details) => {
+    if (details.level >= 2)
+      consignerEvenement("ERREUR_INTERFACE", `${details.message} (${details.sourceId}:${details.lineNumber})`);
+  });
+  fenetrePrincipale.webContents.on("render-process-gone", (_evenement, details) => {
+    consignerEvenement("ERREUR_INTERFACE", `Processus d’affichage arrêté (${details.reason}, code ${details.exitCode})`);
+  });
+  fenetrePrincipale.loadFile(chemins.join(__dirname, "index.html"));
 }
-app.whenReady().then(async () => {
-  if (!hasSingleInstanceLock) return;
+applicationElectron.whenReady().then(async () => {
+  if (!verrouInstanceUnique) return;
   Menu.setApplicationMenu(null);
   try {
-    await load();
-    backupDaily();
-    createWindow();
+    await chargerBase();
+    sauvegarderChaqueJour();
+    creerFenetrePrincipale();
   } catch (error) {
     dialog.showErrorBox(
       "Base SQLCipher inaccessible",
       `Impossible d’ouvrir la base JavaScript : ${error.message}`,
     );
-    app.quit();
+    applicationElectron.quit();
   }
 });
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+applicationElectron.on("window-all-closed", () => {
+  if (process.platform !== "darwin") applicationElectron.quit();
 });
