@@ -1,5 +1,5 @@
 {
-  "installCommand": "",
+  "installCommand": "echo 'Vercel uses only native Node APIs; desktop packages are not required'",
   "rewrites": [
     { "source": "/api/admin/:route*", "destination": "/api/admin?route=:route*" }
   ],
