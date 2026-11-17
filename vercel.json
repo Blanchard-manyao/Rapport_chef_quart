@@ -1,4 +1,5 @@
 {
+  "installCommand": "",
   "rewrites": [
     { "source": "/api/admin/:route*", "destination": "/api/admin?route=:route*" }
   ],
