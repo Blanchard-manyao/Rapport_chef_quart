@@ -130,9 +130,9 @@ function afficherRapportsEnregistres() {
   const lignes = rapports.map((rapport) => {
     const staff = rapport.staff || {};
     const presents = nombre(staff.total) - ["absent", "malade", "permission", "conge"].reduce((total, cle) => total + nombre(staff[cle]), 0);
-    return \`<tr><td>\${formaterDate(rapport.date)}</td><td>\${echapper(rapport.quart || "—")}</td><td>\${echapper(rapport.equipe || "—")}</td><td>\${presents}</td><td>\${formaterNombre(nombre(rapport.production?.paniers))}</td><td>\${formaterNombre(nombre(rapport.production?.tonnageKg))}</td></tr>\`;
+    return `<tr><td>${formaterDate(rapport.date)}</td><td>${echapper(rapport.quart || "—")}</td><td>${echapper(rapport.equipe || "—")}</td><td>${presents}</td><td>${formaterNombre(nombre(rapport.production?.paniers))}</td><td>${formaterNombre(nombre(rapport.production?.tonnageKg))}</td></tr>`;
   }).join("");
-  elements.contenu.innerHTML = \`<section class="panneau"><h2>Rapports enregistrés</h2><p class="discret">\${rapports.length} rapport(s) pour la période sélectionnée.</p><div class="tableau-defilement"><table><thead><tr><th>Date</th><th>Quart</th><th>Équipe</th><th>Effectif présent</th><th>Production</th><th>Tonnage (kg)</th></tr></thead><tbody>\${lignes || '<tr><td colspan="6">Aucun rapport enregistré pour cette période.</td></tr>'}</tbody></table></div></section>\`;
+  elements.contenu.innerHTML = `<section class="panneau"><h2>Rapports enregistrés</h2><p class="discret">${rapports.length} rapport(s) pour la période sélectionnée.</p><div class="tableau-defilement"><table><thead><tr><th>Date</th><th>Quart</th><th>Équipe</th><th>Effectif présent</th><th>Production</th><th>Tonnage (kg)</th></tr></thead><tbody>${lignes || '<tr><td colspan="6">Aucun rapport enregistré pour cette période.</td></tr>'}</tbody></table></div></section>`;
 }
 
 function afficherTempsArret() {
@@ -140,9 +140,9 @@ function afficherTempsArret() {
     ...arret, date: rapport.date, quart: rapport.quart, equipe: rapport.equipe,
   }))).sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.quart).localeCompare(String(b.quart)) || String(a.equipe).localeCompare(String(b.equipe)));
   const totaux = zonesArret.map((zone) => ({ zone, minutes: somme(arrets.filter((arret) => arret.zone === zone).map((arret) => arret.minutes)) }));
-  const cartes = totaux.map(({ zone, minutes }) => \`<article class="carte-zone"><span>\${echapper(zone)}</span><b>\${duree(minutes)}</b></article>\`).join("");
-  const lignes = arrets.map((arret) => \`<tr><td>\${formaterDate(arret.date)}</td><td>\${echapper(arret.quart || "—")}</td><td>\${echapper(arret.equipe || "—")}</td><td>\${echapper(arret.zone || "—")}</td><td>\${echapper(arret.start || "—")}–\${echapper(arret.end || "—")}</td><td>\${echapper(arret.cause || "—")}</td><td>\${duree(arret.minutes)}</td></tr>\`).join("");
-  elements.contenu.innerHTML = \`<section class="panneau resume-arrets"><h2>Temps d’arrêt par zone</h2><div class="grille-zones">\${cartes}</div></section><section class="panneau details-arrets"><h2>Détail par jour et quart — un arrêt distinct par ligne</h2><div class="tableau-defilement"><table><thead><tr><th>Jour</th><th>Quart</th><th>Équipe</th><th>Zone</th><th>Heures</th><th>Cause</th><th>Durée</th></tr></thead><tbody>\${lignes || '<tr><td colspan="7">Aucun arrêt enregistré pour cette période.</td></tr>'}</tbody></table></div></section>\`;
+  const cartes = totaux.map(({ zone, minutes }) => `<article class="carte-zone"><span>${echapper(zone)}</span><b>${duree(minutes)}</b></article>`).join("");
+  const lignes = arrets.map((arret) => `<tr><td>${formaterDate(arret.date)}</td><td>${echapper(arret.quart || "—")}</td><td>${echapper(arret.equipe || "—")}</td><td>${echapper(arret.zone || "—")}</td><td>${echapper(arret.start || "—")}–${echapper(arret.end || "—")}</td><td>${echapper(arret.cause || "—")}</td><td>${duree(arret.minutes)}</td></tr>`).join("");
+  elements.contenu.innerHTML = `<section class="panneau resume-arrets"><h2>Temps d’arrêt par zone</h2><div class="grille-zones">${cartes}</div></section><section class="panneau details-arrets"><h2>Détail par jour et quart — un arrêt distinct par ligne</h2><div class="tableau-defilement"><table><thead><tr><th>Jour</th><th>Quart</th><th>Équipe</th><th>Zone</th><th>Heures</th><th>Cause</th><th>Durée</th></tr></thead><tbody>${lignes || '<tr><td colspan="7">Aucun arrêt enregistré pour cette période.</td></tr>'}</tbody></table></div></section>`;
 }
 
 function afficherOnglet() {
