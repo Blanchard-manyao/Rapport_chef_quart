@@ -73,17 +73,17 @@
     rapport.prelavage ||= { box: "", buckets: 0, secondBox: "", secondBuckets: 0 };
     rapport.stops ||= [];
     if (!rapportExistant && window.utilisateurActif && window.utilisateurActif !== "Administrateur") {
-      rapport.team = window.utilisateurActif;
+      rapport.equipe = window.utilisateurActif;
     }
 
     const hasSecondBox = Boolean(
       rapport.prelavage.secondBox || Number(rapport.prelavage.secondBuckets),
     );
-    const dryers = rapport.drying?.dryers || reglesMetier.creerRapportVide().drying.dryers;
-    const teamOptions = Object.keys(reglesMetier.EQUIPES)
+    const sechoirs = rapport.drying?.sechoirs || reglesMetier.creerRapportVide().drying.sechoirs;
+    const equipeOptions = Object.keys(reglesMetier.EQUIPES)
       .map(
-        (team) =>
-          `<option value="${team}" ${rapport.team === team ? "selected" : ""}>Équipe ${team} — ${reglesMetier.EQUIPES[team]}</option>`,
+        (equipe) =>
+          `<option value="${equipe}" ${rapport.equipe === equipe ? "selected" : ""}>Équipe ${equipe} — ${reglesMetier.EQUIPES[equipe]}</option>`,
       )
       .join("");
 
@@ -140,31 +140,31 @@
         id: "sechage",
         title: "Séchage et production",
         content: `<section class="panneau section-formulaire"><h3>Séchage et production</h3><div class="grille-formulaire">
-          ${creerChampNombre("Colis produits", "production.parcels", rapport.production.parcels)}
+          ${creerChampNombre("Colis produits", "production.paniers", rapport.production.paniers)}
           ${creerChampNombre("Paniers séchés", "drying.basketsDry", rapport.drying.basketsDry, 0, 999)}
         </div>
         <p class="valeur-calculee">Tonnage réalisé : <b data-kg>${reglesMetier.calculerIndicateurs(rapport).kg.toLocaleString("fr-FR")} kg</b></p>
         <p class="valeur-calculee">Poids moyen d'un panier : <b data-poids-moyen-panier>${reglesMetier.calculerIndicateurs(rapport).averageBasket?.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "—"} kg</b></p>
         <p class="valeur-calculee">Poids moyen d’un pain : <b data-poids-moyen-pain>${reglesMetier.calculerIndicateurs(rapport).averageBasketDiv28?.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "—"} kg</b></p></section>`,
       },
-      ...dryers.map((dryer, index) => ({
-        id: `dryer-${index + 1}`,
+      ...sechoirs.map((sechoir, index) => ({
+        id: `sechoir-${index + 1}`,
         title: `Séchoir ${index + 1}`,
         content: `<section class="panneau section-formulaire sechoir" data-sechoir="${index}"><h3>Séchoir ${index + 1}</h3><div class="grille-formulaire">
-          ${creerChampNombre("Cycle (en secondes)", "dryer.cycle", dryer.cycle, 0, 600)}
-          ${creerChampNombre("Brûleur 1", "dryer.burner1", dryer.burner1, 0, 130)}
-          ${creerChampNombre("Brûleur 2", "dryer.burner2", dryer.burner2, 0, 130)}
-          ${creerChamp("Compteur du séchoir", "dryer.counter", dryer.counter)}
-          ${creerChamp("Compteur gaz E1", "dryer.gas1", dryer.gas1)}
-          ${creerChamp("Compteur gaz E2", "dryer.gas2", dryer.gas2)}
-        </div>${groupeArrets(`Arrêt séchoir ${index + 1}`, `Séchoir ${index + 1}`, dryer.stops || [])}</section>`,
+          ${creerChampNombre("Cycle (en secondes)", "sechoir.cycle", sechoir.cycle, 0, 600)}
+          ${creerChampNombre("Brûleur 1", "sechoir.bruleur1", sechoir.bruleur1, 0, 130)}
+          ${creerChampNombre("Brûleur 2", "sechoir.bruleur2", sechoir.bruleur2, 0, 130)}
+          ${creerChamp("Compteur du séchoir", "sechoir.counter", sechoir.counter)}
+          ${creerChamp("Compteur gaz E1", "sechoir.gas1", sechoir.gas1)}
+          ${creerChamp("Compteur gaz E2", "sechoir.gas2", sechoir.gas2)}
+        </div>${groupeArrets(`Arrêt séchoir ${index + 1}`, `Séchoir ${index + 1}`, sechoir.stops || [])}</section>`,
       })),
       {
         id: "conditionnement",
         title: "Conditionnement",
         content: `<section class="panneau section-formulaire"><h3>Conditionnement</h3><div class="grille-formulaire">
           ${creerChampNombre("Balles détectées en début de quart", "production.balesStart", rapport.production.balesStart)}
-          ${creerChampNombre("Balles détectées", "production.balesShift", rapport.production.balesShift)}
+          ${creerChampNombre("Balles détectées", "production.balesquart", rapport.production.balesquart)}
           ${creerChampNombre("Balles détectées traitées", "production.balesProcessed", rapport.production.balesProcessed)}
           ${creerChampNombre("Balles détectées en fin de quart", "production.balesEnd", rapport.production.balesEnd)}
         </div>${groupeArrets("Arrêt conditionnement", "Conditionnement", rapport.stops.filter((stop) => stop.zone === "Conditionnement"))}</section>`,
@@ -203,8 +203,8 @@
         <form class="formulaire-rapport">
           <div class="contexte-formulaire grille-formulaire">
             ${creerChamp("Date", "date", rapport.date, "date", "required")}
-            <label class="champ">Quart<select data-chemin="shift" required><option value="" disabled ${rapport.shift ? "" : "selected"}>Choisir un quart</option>${reglesMetier.QUARTS.map((shift) => `<option ${rapport.shift === shift ? "selected" : ""}>${shift}</option>`).join("")}</select></label>
-            <label class="champ">Équipe<select data-chemin="team">${teamOptions}</select></label>
+            <label class="champ">Quart<select data-chemin="quart" required><option value="" disabled ${rapport.quart ? "" : "selected"}>Choisir un quart</option>${reglesMetier.QUARTS.map((quart) => `<option ${rapport.quart === quart ? "selected" : ""}>${quart}</option>`).join("")}</select></label>
+            <label class="champ">Équipe<select data-chemin="equipe">${equipeOptions}</select></label>
           </div>
           <div class="disposition-rapport">
             <div class="saisie-rapport">
@@ -230,14 +230,14 @@
 
     const modal = document.querySelector(".fenetre-rapport:last-child");
     const form = modal.querySelector(".formulaire-rapport");
-    const teamSelect = modal.querySelector('[data-chemin="team"]');
+    const equipeSelect = modal.querySelector('[data-chemin="equipe"]');
     if (window.utilisateurActif && window.utilisateurActif !== "Administrateur") {
-      teamSelect.value = window.utilisateurActif;
-      teamSelect.disabled = true;
+      equipeSelect.value = window.utilisateurActif;
+      equipeSelect.disabled = true;
     }
     if (!rapportExistant) {
       form.querySelectorAll("[data-chemin]").forEach((field) => {
-        if (field.dataset.chemin !== "team") field.value = "";
+        if (field.dataset.chemin !== "equipe") field.value = "";
       });
     }
 
@@ -420,11 +420,11 @@
 
     form.querySelectorAll("[data-chemin]").forEach((element) => {
       const path = element.dataset.chemin;
-      if (path.startsWith("dryer.")) return;
+      if (path.startsWith("sechoir.")) return;
 
       let value = element.value;
       if (element.type === "number") value = Number(value || 0);
-      if (["date", "team", "shift"].includes(path)) {
+      if (["date", "equipe", "quart"].includes(path)) {
         rapport[path] = value;
         return;
       }
@@ -450,13 +450,13 @@
       });
     });
 
-    rapport.drying.dryers = [...form.querySelectorAll(".sechoir")].map((box, index) => {
-      const previous = (base.drying?.dryers || [])[index] || {};
-      const dryer = {
+    rapport.drying.sechoirs = [...form.querySelectorAll(".sechoir")].map((box, index) => {
+      const previous = (base.drying?.sechoirs || [])[index] || {};
+      const sechoir = {
         number: index + 1,
         cycle: 0,
-        burner1: 0,
-        burner2: 0,
+        bruleur1: 0,
+        bruleur2: 0,
         counter: "",
         gas1: "",
         gas2: "",
@@ -465,11 +465,11 @@
 
       box
         .querySelectorAll(
-          '[data-chemin="dryer.cycle"], [data-chemin="dryer.burner1"], [data-chemin="dryer.burner2"], [data-chemin="dryer.counter"], [data-chemin="dryer.gas1"], [data-chemin="dryer.gas2"]',
+          '[data-chemin="sechoir.cycle"], [data-chemin="sechoir.bruleur1"], [data-chemin="sechoir.bruleur2"], [data-chemin="sechoir.counter"], [data-chemin="sechoir.gas1"], [data-chemin="sechoir.gas2"]',
         )
         .forEach((element) => {
           const key = element.dataset.chemin.split(".")[1];
-          dryer[key] = element.type === "number" ? Number(element.value || 0) : element.value.trim();
+          sechoir[key] = element.type === "number" ? Number(element.value || 0) : element.value.trim();
         });
 
       box.querySelectorAll(".ligne-arret").forEach((row) => {
@@ -480,10 +480,10 @@
             stop[cle] = element.value.trim();
           }
         });
-        if (stop.start || stop.end || stop.cause || stop.equipment) dryer.stops.push(stop);
+        if (stop.start || stop.end || stop.cause || stop.equipment) sechoir.stops.push(stop);
       });
 
-      return { ...previous, ...dryer };
+      return { ...previous, ...sechoir };
     });
 
     rapport.generators = {};

@@ -40,3 +40,15 @@ Les données sont conservées dans le dossier utilisateur d’Electron. Les expo
 ## Base de données JavaScript
 
 La version JavaScript utilise une base SQLCipher 4 nommée `rapport-cq.db`, située dans `%APPDATA%\rapport-cq-js`. Ouvre-la avec **DB Browser for SQLCipher** (et non l’édition SQLite seule), sélectionne SQLCipher 4 et saisis la phrase secrète SQLCipher de cette installation. Ferme l’application avant de modifier les données dans DB Browser ; les rapports sont dans la table `reports` et leur contenu détaillé est conservé dans `payload_json`.
+
+## Portail administrateur distant (Vercel)
+
+Le portail web est à la racine du projet et son API se trouve dans `api/admin.mjs`. Vercel héberge l’application et Supabase fournit PostgreSQL via son API REST. La clé `service_role` est utilisée uniquement côté serveur et ne doit jamais être publiée dans le navigateur. La base locale reste la référence. Depuis l’application Windows, connectez-vous comme administrateur local puis choisissez **Synchroniser les rapports**. Saisissez l’identifiant et le mot de passe du portail pour envoyer les rapports par lots via HTTPS. Ces identifiants ne sont pas enregistrés sur le poste. Les rapports portant le même identifiant sont actualisés dans Supabase.
+
+1. Créer un projet Supabase et exécuter `database/schema.sql` dans son SQL Editor.
+2. Importer le dépôt GitHub dans Vercel (Root Directory : `.`) et ajouter les variables `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` depuis les paramètres API du projet Supabase.
+3. Générer l’empreinte du mot de passe avec `node scripts/hacher-mot-de-passe-admin.js` depuis un terminal privé.
+4. Définir dans Vercel : `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH` (empreinte générée) et `SESSION_SECRET` (au moins 32 octets aléatoires encodés en hexadécimal). Redéployer après l’ajout des variables.
+5. Ouvrir l’URL Vercel pour accéder à la page d’administration.
+
+Les mots de passe ne sont pas enregistrés en clair. Les sessions utilisent un cookie `HttpOnly`, `Secure` et `SameSite=Strict`, et cinq échecs de connexion verrouillent l’identifiant et l’adresse source pendant 15 minutes.

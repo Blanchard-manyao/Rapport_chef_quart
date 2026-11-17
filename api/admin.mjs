@@ -1,10 +1,23 @@
-import { neon } from "@neondatabase/serverless";
 import { createHmac, pbkdf2Sync, timingSafeEqual } from "node:crypto";
 
 const COOKIE_NAME = "rapport_cq_admin";
 const SESSION_DURATION_SECONDS = 8 * 60 * 60;
-const databaseUrl = () =>
-  process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.DATABASE_URL_UNPOOLED;
+const supabaseUrl = () => process.env.SUPABASE_URL?.replace(/\/$/, "");
+const supabaseKey = () => process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+async function supabase(path, options = {}) {
+  const response = await fetch(`${supabaseUrl()}/rest/v1/${path}`, {
+    ...options,
+    headers: {
+      apikey: supabaseKey(),
+      Authorization: `Bearer ${supabaseKey()}`,
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+  if (!response.ok) throw new Error(`Supabase ${response.status}`);
+  return response.status === 204 ? null : response.json();
+}
 
 function json(data, status = 200, headers = {}) {
   return Response.json(data, { status, headers });
@@ -12,7 +25,8 @@ function json(data, status = 200, headers = {}) {
 
 function configurationReady() {
   return Boolean(
-    databaseUrl() &&
+    supabaseUrl() &&
+      supabaseKey() &&
       process.env.ADMIN_USERNAME &&
       process.env.ADMIN_PASSWORD_HASH &&
       process.env.SESSION_SECRET,
@@ -101,18 +115,12 @@ async function router(request) {
     const motDePasse = String(body?.password || "");
     if (!utilisateur || utilisateur.length > 100 || motDePasse.length > 128)
       return json({ error: "Identifiant ou mot de passe incorrect." }, 401);
-    let sql;
     let cleTentatives;
     try {
-      sql = neon(databaseUrl());
       const adresse = request.headers.get("x-real-ip") || "inconnue";
       cleTentatives = `${adresse}:${utilisateur.toLowerCase()}`.slice(0, 250);
-      const verrou = await sql`
-        SELECT locked_until > now() AS locked
-        FROM admin_login_attempts
-        WHERE login_key = ${cleTentatives}
-      `;
-      if (verrou[0]?.locked)
+      const verrou = await supabase(`admin_login_attempts?select=locked_until&login_key=eq.${encodeURIComponent(cleTentatives)}`);
+      if (verrou[0]?.locked_until && new Date(verrou[0].locked_until) > new Date())
         return json({ error: "Trop de tentatives. Réessayez dans 15 minutes." }, 429, {
           "Cache-Control": "no-store",
         });
@@ -124,26 +132,17 @@ async function router(request) {
     const motDePasseValide = verifierMotDePasse(motDePasse);
     if (!identifiantValide || !motDePasseValide) {
       try {
-        await sql`
-          INSERT INTO admin_login_attempts (login_key, failed_count, locked_until)
-          VALUES (${cleTentatives}, 1, NULL)
-          ON CONFLICT (login_key) DO UPDATE SET
-            failed_count = CASE
-              WHEN admin_login_attempts.locked_until > now() THEN admin_login_attempts.failed_count
-              ELSE admin_login_attempts.failed_count + 1
-            END,
-            locked_until = CASE
-              WHEN admin_login_attempts.failed_count + 1 >= 5 THEN now() + interval '15 minutes'
-              ELSE admin_login_attempts.locked_until
-            END
-        `;
+        await supabase("rpc/record_admin_login_failure", {
+          method: "POST",
+          body: JSON.stringify({ p_login_key: cleTentatives }),
+        });
       } catch {
         return json({ error: "Le service de connexion est indisponible." }, 503);
       }
       return json({ error: "Identifiant ou mot de passe incorrect." }, 401);
     }
 
-    await sql`DELETE FROM admin_login_attempts WHERE login_key = ${cleTentatives}`;
+    await supabase(`admin_login_attempts?login_key=eq.${encodeURIComponent(cleTentatives)}`, { method: "DELETE" });
 
     const session = Buffer.from(
       JSON.stringify({ user: utilisateur, exp: Date.now() + SESSION_DURATION_SECONDS * 1000 }),
@@ -172,13 +171,7 @@ async function router(request) {
       });
 
     try {
-      const sql = neon(databaseUrl());
-      const rows = await sql`
-        SELECT report_id, report_date, quart, equipe, payload_json
-        FROM reports
-        ORDER BY report_date DESC, quart, equipe
-        LIMIT 1000
-      `;
+      const rows = await supabase("reports?select=payload_json&order=report_date.desc,quart.asc,equipe.asc&limit=1000");
       return json(
         { reports: rows.map((row) => row.payload_json) },
         200,
@@ -225,24 +218,11 @@ async function router(request) {
     }
 
     try {
-      const sql = neon(databaseUrl());
-      await sql`
-        INSERT INTO reports (report_id, report_date, quart, equipe, payload_json)
-        SELECT report_id, report_date::date, quart, equipe, payload_json
-        FROM jsonb_to_recordset(${JSON.stringify(reports)}::jsonb) AS item(
-          report_id text,
-          report_date text,
-          quart text,
-          equipe text,
-          payload_json jsonb
-        )
-        ON CONFLICT (report_id) DO UPDATE SET
-          report_date = EXCLUDED.report_date,
-          quart = EXCLUDED.quart,
-          equipe = EXCLUDED.equipe,
-          payload_json = EXCLUDED.payload_json,
-          updated_at = now()
-      `;
+      await supabase("reports?on_conflict=report_id", {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates" },
+        body: JSON.stringify(reports),
+      });
       return json({ ok: true, synced: reports.length }, 200, {
         "Cache-Control": "no-store",
       });

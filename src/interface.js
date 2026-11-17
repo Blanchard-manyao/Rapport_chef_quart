@@ -278,10 +278,10 @@ function afficherStructureApplication() {
     history: "Historique",
     stops: "Temps d’arrêt par zone",
   };
-  const teamActions = etatInterface.administrateur
+  const equipeActions = etatInterface.administrateur
     ? ""
     : '<button id="changerEquipe" class="secondaire">Changer d’équipe</button>';
-  return `<div class="coquille"><aside class="barre-laterale"><div class="usine">EXAT Missehi<br><small>Rapport de quart</small></div>${tabs.map(([k, t]) => `<button data-onglet="${k}" class="${etatInterface.onglet === k ? "actif" : ""}">${t}</button>`).join("")}${teamActions}<button id="motDePasse" class="secondaire">Changer le mot de passe</button><button id="deconnexion" class="deconnexion">Déconnexion</button></aside><section class="principal"><header class="entete"><h1>${titles[etatInterface.onglet]}</h1>${
+  return `<div class="coquille"><aside class="barre-laterale"><div class="usine">EXAT Missehi<br><small>Rapport de quart</small></div>${tabs.map(([k, t]) => `<button data-onglet="${k}" class="${etatInterface.onglet === k ? "actif" : ""}">${t}</button>`).join("")}${equipeActions}${etatInterface.administrateur ? '<button id="synchroniserRapports" class="secondaire">Synchroniser les rapports</button>' : ""}<button id="motDePasse" class="secondaire">Changer le mot de passe</button><button id="deconnexion" class="deconnexion">Déconnexion</button></aside><section class="principal"><header class="entete"><h1>${titles[etatInterface.onglet]}</h1>${
     showFilters
       ? `<div class="filtres"><label>Mois <input id="mois" type="month" value="${etatInterface.mois}" ${rangeActive ? "disabled" : ""}></label><label>Jour <select id="jour" ${rangeActive ? "disabled" : ""}><option value="">Tous les jours</option>${Array.from(
           { length: count },
@@ -310,6 +310,8 @@ function afficherEcran() {
     "Voulez-vous vraiment vous déconnecter ?",
   );
   selectionner("#motDePasse").onclick = dialogueMotDePasse;
+  if (selectionner("#synchroniserRapports"))
+    selectionner("#synchroniserRapports").onclick = dialogueSynchronisationDistante;
   if (!etatInterface.administrateur)
     selectionner("#changerEquipe").onclick = () => confirmerFermetureSession(
       "Voulez-vous vous déconnecter pour changer d’équipe ?",
@@ -425,6 +427,39 @@ function dialogueMotDePasse() {
     }
   };
 }
+function dialogueSynchronisationDistante() {
+  const total = etatInterface.rapports.length;
+  const modal = document.createElement("div");
+  modal.className = "fenetre-modale";
+  modal.innerHTML = `<section class="panneau"><h2>Synchroniser les rapports</h2><p>${total} rapport(s) seront envoyés vers le portail administrateur Vercel par connexion HTTPS. Les rapports déjà présents seront actualisés. Les identifiants du portail ne seront pas enregistrés sur ce poste.</p><form id="formulaireSynchronisation"><label class="champ">Identifiant du portail<input name="username" required maxlength="100" autocomplete="username"></label><label class="champ">Mot de passe du portail<input name="password" type="password" required maxlength="128" autocomplete="current-password"></label><p class="discret" id="etatSynchronisation"></p><div class="actions"><button type="submit" ${total ? "" : "disabled"}>Envoyer ${total} rapport(s)</button><button type="button" class="secondaire" onclick="this.closest('.fenetre-modale').remove()">Annuler</button></div></form></section>`;
+  document.body.append(modal);
+  const form = modal.querySelector("#formulaireSynchronisation");
+  const status = modal.querySelector("#etatSynchronisation");
+  const submit = form.querySelector('button[type="submit"]');
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    if (!etatInterface.administrateur) {
+      modal.remove();
+      return;
+    }
+    const values = new FormData(form);
+    const username = String(values.get("username") || "");
+    const password = String(values.get("password") || "");
+    submit.disabled = true;
+    status.textContent = "Synchronisation en cours…";
+    try {
+      const result = await rapportQuart.synchroniserRapportsDistants({ username, password });
+      form.elements.password.value = "";
+      status.textContent = `${result.synced} rapport(s) synchronisé(s) sur ${result.total}.`;
+      form.querySelector('button[type="button"]').textContent = "Fermer";
+    } catch (error) {
+      form.elements.password.value = "";
+      status.textContent = error.message || "Synchronisation impossible.";
+      submit.disabled = !etatInterface.rapports.length;
+    }
+  };
+  form.elements.username.focus();
+}
 // periode : applique les filtres de date et respecte l’historique complet des équipes.
 function rapportsPeriode() {
   if (!etatInterface.administrateur && etatInterface.onglet === "history") return etatInterface.rapports;
@@ -442,15 +477,15 @@ function rapportsPeriode() {
 function arretsDuRapport(r) {
   return [
     ...(r.stops || []),
-    ...(r.drying?.dryers || []).flatMap((x) =>
+    ...(r.drying?.sechoirs || []).flatMap((x) =>
       (x.stops || []).map((s) => ({ ...s, zone: `Séchoir ${x.number}` })),
     ),
   ].map((s) => ({
     ...s,
     minutes: reglesMetier.dureeArret(s),
     date: r.date,
-    shift: r.shift,
-    team: r.team,
+    quart: r.quart,
+    equipe: r.equipe,
     id: r.id,
   }));
 }
@@ -473,14 +508,14 @@ function courbeProduction(reports, mode = "day") {
   if (!dates.length)
     return '<p class="discret">Aucune production enregistrée pour cette période.</p>';
 
-  const teams = Object.keys(reglesMetier.EQUIPES);
+  const equipes = Object.keys(reglesMetier.EQUIPES);
   const colors = ["#2563eb", "#f59e0b", "#FF2C2C", "#16a34a"];
-  const values = teams.map((team) =>
+  const values = equipes.map((equipe) =>
     dates.map((date) =>
       calculerSomme(
         chartReports
-          .filter((r) => String(r.date || "").startsWith(date) && r.team === team)
-          .map((r) => r.production?.parcels),
+          .filter((r) => String(r.date || "").startsWith(date) && r.equipe === equipe)
+          .map((r) => r.production?.paniers),
       ),
     ),
   );
@@ -505,7 +540,7 @@ function courbeProduction(reports, mode = "day") {
   }).join("");
 
   const series = values
-    .map((points, teamIndex) => {
+    .map((points, equipeIndex) => {
       const coords = points.map((value, index) => [xAt(index), yAt(value)]);
       const path =
         coords.length === 1
@@ -518,10 +553,10 @@ function courbeProduction(reports, mode = "day") {
       const markers = coords
         .map(
           ([x, y], index) =>
-          `<circle cx="${x}" cy="${y}" r="4" fill="${colors[teamIndex]}"><title>Équipe ${teams[teamIndex]} · ${dates[index]} : ${compact(points[index])} colis</title></circle>`,
+          `<circle cx="${x}" cy="${y}" r="4" fill="${colors[equipeIndex]}"><title>Équipe ${equipes[equipeIndex]} · ${dates[index]} : ${compact(points[index])} colis</title></circle>`,
         )
         .join("");
-      return `<g class="serie-graphique"><path d="${path}" stroke="${colors[teamIndex]}"/>${markers}</g>`;
+      return `<g class="serie-graphique"><path d="${path}" stroke="${colors[equipeIndex]}"/>${markers}</g>`;
     })
     .join("");
 
@@ -531,17 +566,17 @@ function courbeProduction(reports, mode = "day") {
         `<text class="date-graphique" x="${xAt(index)}" y="244" text-anchor="middle">${mode === "month" ? new Date(`${date}-01T00:00:00`).toLocaleDateString("fr-FR", { month: "short", year: "2-digit" }) : date.slice(8, 10)}</text>`,
     )
     .join("");
-  const legend = teams
+  const legend = equipes
     .map(
-      (team, index) =>
-        `<span><i style="background:${colors[index]}"></i>Équipe ${team}</span>`,
+      (equipe, index) =>
+        `<span><i style="background:${colors[index]}"></i>Équipe ${equipe}</span>`,
     )
     .join("");
 
   return `<div class="graphique-ligne-avec-legende"><div class="conteneur-graphique-ligne"><svg class="graphique-ligne" viewBox="0 0 ${width} ${height}" role="img" aria-label="Évolution de la production par équipe ${mode === "month" ? "par mois" : "par jour"}">${grid}${series}${labels}</svg></div><div class="legende">${legend}</div></div>`;
 }
 function rapportModifiable(report) {
-  if (!report || etatInterface.administrateur || report.team !== etatInterface.utilisateur || !report.createdAt)
+  if (!report || etatInterface.administrateur || report.equipe !== etatInterface.utilisateur || !report.createdAt)
     return false;
   const created = Date.parse(report.createdAt);
   return Number.isFinite(created) && Date.now() - created <= 8 * 60 * 60 * 1000;
@@ -555,7 +590,7 @@ function tableauRapports(rs, avecActions = false, actionsHistorique = false) {
           ? `<button data-modifier="${echapperTexteHtml(r.id)}">Revoir / modifier</button>`
           : `<button class="secondaire" data-ouvrir="${echapperTexteHtml(r.id)}">Voir</button>`
         : `<button class="secondaire" data-ouvrir="${echapperTexteHtml(r.id)}">Voir</button> <button data-synthese="${echapperTexteHtml(r.id)}">Synthèse</button>`;
-      return `<tr class="ligne-rapport" data-identifiant="${echapperTexteHtml(r.id)}"><td>${formaterDate(r.date)}</td><td>${echapperTexteHtml(r.shift)}</td><td>${echapperTexteHtml(r.team)}</td><td>${d.present}</td><td>${Number(r.production?.parcels || 0)}</td><td>${d.kg.toLocaleString("fr-FR")}</td>${avecActions ? `<td>${action}</td>` : ""}</tr>`;
+      return `<tr class="ligne-rapport" data-identifiant="${echapperTexteHtml(r.id)}"><td>${formaterDate(r.date)}</td><td>${echapperTexteHtml(r.quart)}</td><td>${echapperTexteHtml(r.equipe)}</td><td>${d.present}</td><td>${Number(r.production?.paniers || 0)}</td><td>${d.kg.toLocaleString("fr-FR")}</td>${avecActions ? `<td>${action}</td>` : ""}</tr>`;
     })
     .join("")}</tbody></table></div>`;
 }
@@ -588,15 +623,15 @@ function lierBoutonsRapport(root = document) {
 function afficherAccueil(el) {
   const rs = rapportsPeriode(),
     st = tousLesArrets(rs),
-    prod = calculerSomme(rs.map((r) => r.production?.parcels)),
+    prod = calculerSomme(rs.map((r) => r.production?.paniers)),
     zones = reglesMetier.ZONES_ARRET.map((zone) => ({
       name: zone,
       minutes: calculerSomme(st.filter((stop) => stop.zone === zone).map((stop) => stop.minutes)),
     })),
     colors = ["#2563eb", "#f59e0b", "#FF2C2C", "#16a34a"],
-    teams = Object.keys(reglesMetier.EQUIPES),
-    totals = teams.map((team) =>
-      calculerSomme(rs.filter((r) => r.team === team).map((r) => r.production?.parcels)),
+    equipes = Object.keys(reglesMetier.EQUIPES),
+    totals = equipes.map((equipe) =>
+      calculerSomme(rs.filter((r) => r.equipe === equipe).map((r) => r.production?.paniers)),
     );
   const productionTotal = calculerSomme(totals);
   let angle = 0;
@@ -610,8 +645,8 @@ function afficherAccueil(el) {
   angle = 0;
   // Place la lettre de chaque équipe et sa part sur le secteur correspondant.
   const pieLabels = productionTotal
-    ? teams
-        .map((team, index) => {
+    ? equipes
+        .map((equipe, index) => {
           const sweep = (totals[index] / productionTotal) * 360;
           const middle = angle + sweep / 2;
           angle += sweep;
@@ -624,7 +659,7 @@ function afficherAccueil(el) {
             { maximumFractionDigits: 1 },
           );
 
-          return `<span class="etiquette-camembert" style="left:${x}%;top:${y}%">${team}<br>${percent} %</span>`;
+          return `<span class="etiquette-camembert" style="left:${x}%;top:${y}%">${equipe}<br>${percent} %</span>`;
         })
         .join("")
     : "";
@@ -648,11 +683,11 @@ function afficherAccueil(el) {
       <h2>Répartition de la production par équipe</h2>
       <div class="disposition-camembert">
         <div class="camembert" style="background:conic-gradient(${slices || "#dbe5ef 0deg 360deg"})">${pieLabels}</div>
-        <div>${teams.map((team, index) => {
+        <div>${equipes.map((equipe, index) => {
           const percent = productionTotal
             ? ((totals[index] / productionTotal) * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 })
             : "0";
-          return `<div class="ligne-zone"><span><i class="point" style="background:${colors[index]}"></i>Équipe ${team} · ${percent} %</span><b>${totals[index].toLocaleString("fr-FR")} colis</b></div>`;
+          return `<div class="ligne-zone"><span><i class="point" style="background:${colors[index]}"></i>Équipe ${equipe} · ${percent} %</span><b>${totals[index].toLocaleString("fr-FR")} colis</b></div>`;
         }).join("")}</div>
       </div>
     </section>
@@ -691,13 +726,13 @@ function afficherHistorique(el) {
   const apply = () => {
     let list = rapportsPeriode();
     const date = selectionner("#filtreDate").value,
-      shift = selectionner("#filtreQuart").value,
-      team = selectionner("#filtreEquipe").value;
+      quart = selectionner("#filtreQuart").value,
+      equipe = selectionner("#filtreEquipe").value;
     list = list.filter(
       (r) =>
         (!date || r.date === date) &&
-        (!shift || r.shift === shift) &&
-        (!team || r.team === team),
+        (!quart || r.quart === quart) &&
+        (!equipe || r.equipe === equipe),
     );
     selectionner("#tableauHistorique").innerHTML = tableauRapports(
       list,
@@ -715,7 +750,7 @@ function afficherHistorique(el) {
       selectionner("#exporterHistorique").onclick = () =>
         exporterRapports(list, selectionner("#filtreDate").value);
   };
-  ["filterDate", "filterShift", "filterTeam"].forEach(
+  ["filtreDate", "filtreQuart", "filtreEquipe"].forEach(
     (id) => (selectionner("#" + id).onchange = apply),
   );
   selectionner("#effacerFiltres").onclick = () => {
@@ -762,8 +797,8 @@ function afficherVueArrets(el) {
   const st = tousLesArrets().sort(
     (a, b) =>
       a.date.localeCompare(b.date) ||
-      reglesMetier.QUARTS.indexOf(a.shift) - reglesMetier.QUARTS.indexOf(b.shift) ||
-      a.team.localeCompare(b.team) ||
+      reglesMetier.QUARTS.indexOf(a.quart) - reglesMetier.QUARTS.indexOf(b.quart) ||
+      a.equipe.localeCompare(b.equipe) ||
       (reglesMetier.lireHeureEnMinutes(a.start) ?? 0) - (reglesMetier.lireHeureEnMinutes(b.start) ?? 0),
   );
   const zoneTotals = reglesMetier.ZONES_ARRET.map((zone) => ({
@@ -781,9 +816,9 @@ function afficherVueArrets(el) {
       const prev = st[i - 1],
         startGroup =
           !prev ||
-          `${prev.date}|${prev.shift}|${prev.team}` !==
-            `${s.date}|${s.shift}|${s.team}`;
-      return `<tr class="${startGroup ? "debut-groupe-arrets" : ""}"><td>${formaterDate(s.date)}</td><td>${echapperTexteHtml(s.shift)}</td><td>${echapperTexteHtml(s.team)}</td><td>${echapperTexteHtml(s.zone)}</td><td>${echapperTexteHtml(reglesMetier.formaterHeure(s.start))}–${echapperTexteHtml(reglesMetier.formaterHeure(s.end))}</td><td>${echapperTexteHtml(s.cause)}</td><td>${reglesMetier.formaterDuree(s.minutes)}</td></tr>`;
+          `${prev.date}|${prev.quart}|${prev.equipe}` !==
+            `${s.date}|${s.quart}|${s.equipe}`;
+      return `<tr class="${startGroup ? "debut-groupe-arrets" : ""}"><td>${formaterDate(s.date)}</td><td>${echapperTexteHtml(s.quart)}</td><td>${echapperTexteHtml(s.equipe)}</td><td>${echapperTexteHtml(s.zone)}</td><td>${echapperTexteHtml(reglesMetier.formaterHeure(s.start))}–${echapperTexteHtml(reglesMetier.formaterHeure(s.end))}</td><td>${echapperTexteHtml(s.cause)}</td><td>${reglesMetier.formaterDuree(s.minutes)}</td></tr>`;
     })
     .join("");
   el.innerHTML = `<div class="actions"><button id="exporterArrets">Exporter les arrêts XLSX</button></div><section class="panneau resume-arrets"><h2>Temps d’arrêt par zone</h2><div class="grille-zones">${zoneCards}</div></section><section class="panneau details-arrets"><h2>Détail par jour et quart — un arrêt distinct par ligne</h2><div class="conteneur-tableau"><table><thead><tr><th>Jour</th><th>Quart</th><th>Équipe</th><th>Zone</th><th>Heures</th><th>Cause</th><th>Durée</th></tr></thead><tbody>${rows || '<tr><td colspan="7">Aucun arrêt enregistré pour cette période.</td></tr>'}</tbody></table></div></section>`;
@@ -792,8 +827,8 @@ function afficherVueArrets(el) {
       ["Jour", "Quart", "Équipe", "Zone", "Début", "Fin", "Cause", "Durée"],
       ...st.map((s) => [
         formaterDate(s.date),
-        s.shift,
-        s.team,
+        s.quart,
+        s.equipe,
         s.zone,
         reglesMetier.formaterHeure(s.start),
         reglesMetier.formaterHeure(s.end),
@@ -834,13 +869,13 @@ function creerRapport(rapportExistant = null) {
       const errors = reglesMetier.validerRapport(r);
       if (errors.length) throw new Error(errors.join("\n"));
       // Le même créneau ne peut appartenir qu’à une seule équipe.
-      const reportId = `${r.date}_${r.shift}_${r.team}`;
+      const reportId = `${r.date}_${r.quart}_${r.equipe}`;
       const duplicate = etatInterface.rapports.find(
-        (saved) => saved.date === r.date && saved.shift === r.shift && saved.id !== reportId,
+        (saved) => saved.date === r.date && saved.quart === r.quart && saved.id !== reportId,
       );
       if (duplicate)
         throw new Error(
-          `Un rapport existe déjà pour cette date et ce quart (équipe ${duplicate.team}).`,
+          `Un rapport existe déjà pour cette date et ce quart (équipe ${duplicate.equipe}).`,
         );
       await rapportQuart.enregistrerRapport(r);
       await rechargerDonnees();
@@ -848,7 +883,7 @@ function creerRapport(rapportExistant = null) {
       afficherNotification("Rapport enregistré.");
       // Ouvre immédiatement la synthèse du rapport tout juste sauvegardé.
       const saved = etatInterface.rapports.find(
-        (item) => item.date === r.date && item.shift === r.shift && item.team === r.team,
+        (item) => item.date === r.date && item.quart === r.quart && item.equipe === r.equipe,
       );
       if (saved) {
         afficherSynthese(saved.id);
@@ -880,7 +915,7 @@ function ouvrirRapport(id) {
     stops = arretsDuRapport(r);
   document.body.insertAdjacentHTML(
     "beforeend",
-    `<div class="fenetre-modale"><section class="panneau rapport-lecture-seule"><h2 class="titre-rapport"><span>Rapport de quart</span><button type="button" class="secondaire" onclick="this.closest('.fenetre-modale').remove()">Fermer</button></h2><p>${formaterDate(r.date)} · ${echapperTexteHtml(r.shift)} · Équipe ${echapperTexteHtml(r.team)} — ${echapperTexteHtml(reglesMetier.EQUIPES[r.team])}</p><h3>Effectif</h3>${fmt("Total", r.staff?.total)}${fmt("Présents", d.present)}${fmt("Absents", r.staff?.absent)}${fmt("Malades", r.staff?.malade)}${fmt("Permissions", r.staff?.permission)}${fmt("Congés", r.staff?.conge)}${fmt("Accidents", r.staff?.accidents)}<h3>Prélavage</h3>${fmt("Box 1", r.prelavage?.box)}${fmt("Godets", r.prelavage?.buckets)}${fmt("Total prélavé", `${reglesMetier.calculerIndicateurs(r).prelavageTotal.toLocaleString("fr-FR")} kg`)}${fmt("Box 2", r.prelavage?.secondBox)}${fmt("Godets box 2", r.prelavage?.secondBuckets)}<h3>Granulation</h3>${fmt("Box usinage", r.granulation?.box)}${fmt("Titre acide (g/l)", r.granulation?.acidTitre)}${fmt("Consommation acide (kg)", r.granulation?.acidConsumption)}${fmt("Paniers granulés", r.granulation?.baskets)}${fmt("Avance paniers", r.granulation?.basketAdvance)}${fmt("Paniers lavés", r.granulation?.basketsWashed)}<h3>Séchage et production</h3>${fmt("Paniers séchés", r.drying?.basketsDry)}${fmt("Production (colis)", r.production?.parcels)}${fmt("Tonnage (kg)", d.kg)}${fmt("Balles début / quart / traitées / fin", [r.production?.balesStart, r.production?.balesShift, r.production?.balesProcessed, r.production?.balesEnd].join(" / "))}${(r.drying?.dryers || []).map((x) => `<h4>Séchoir ${x.number}</h4>${fmt("Cycle / brûleurs 1–2", `${x.cycle} sec / ${x.burner1} / ${x.burner2}`)}${fmt("Compteur / gaz", `${x.counter || "—"} / ${x.gas1 || "—"} / ${x.gas2 || "—"}`)}`).join("")}<h3>Arrêts du quart</h3>${stops.length ? `<div class="conteneur-tableau"><table><thead><tr><th>Zone</th><th>Début</th><th>Fin</th><th>Cause</th><th>Durée</th></tr></thead><tbody>${stops.map((s) => `<tr><td>${echapperTexteHtml(s.zone)}</td><td>${reglesMetier.formaterHeure(s.start)}</td><td>${reglesMetier.formaterHeure(s.end)}</td><td>${echapperTexteHtml(s.cause)}</td><td>${reglesMetier.formaterDuree(s.minutes)}</td></tr>`).join("")}</tbody></table></div>` : "<p>Aucun arrêt.</p>"}<h3>Groupes électrogènes</h3>${Object.entries(
+    `<div class="fenetre-modale"><section class="panneau rapport-lecture-seule"><h2 class="titre-rapport"><span>Rapport de quart</span><button type="button" class="secondaire" onclick="this.closest('.fenetre-modale').remove()">Fermer</button></h2><p>${formaterDate(r.date)} · ${echapperTexteHtml(r.quart)} · Équipe ${echapperTexteHtml(r.equipe)} — ${echapperTexteHtml(reglesMetier.EQUIPES[r.equipe])}</p><h3>Effectif</h3>${fmt("Total", r.staff?.total)}${fmt("Présents", d.present)}${fmt("Absents", r.staff?.absent)}${fmt("Malades", r.staff?.malade)}${fmt("Permissions", r.staff?.permission)}${fmt("Congés", r.staff?.conge)}${fmt("Accidents", r.staff?.accidents)}<h3>Prélavage</h3>${fmt("Box 1", r.prelavage?.box)}${fmt("Godets", r.prelavage?.buckets)}${fmt("Total prélavé", `${reglesMetier.calculerIndicateurs(r).prelavageTotal.toLocaleString("fr-FR")} kg`)}${fmt("Box 2", r.prelavage?.secondBox)}${fmt("Godets box 2", r.prelavage?.secondBuckets)}<h3>Granulation</h3>${fmt("Box usinage", r.granulation?.box)}${fmt("Titre acide (g/l)", r.granulation?.acidTitre)}${fmt("Consommation acide (kg)", r.granulation?.acidConsumption)}${fmt("Paniers granulés", r.granulation?.baskets)}${fmt("Avance paniers", r.granulation?.basketAdvance)}${fmt("Paniers lavés", r.granulation?.basketsWashed)}<h3>Séchage et production</h3>${fmt("Paniers séchés", r.drying?.basketsDry)}${fmt("Production (colis)", r.production?.paniers)}${fmt("Tonnage (kg)", d.kg)}${fmt("Balles début / quart / traitées / fin", [r.production?.balesStart, r.production?.balesquart, r.production?.balesProcessed, r.production?.balesEnd].join(" / "))}${(r.drying?.sechoirs || []).map((x) => `<h4>Séchoir ${x.number}</h4>${fmt("Cycle / brûleurs 1–2", `${x.cycle} sec / ${x.bruleur1} / ${x.bruleur2}`)}${fmt("Compteur / gaz", `${x.counter || "—"} / ${x.gas1 || "—"} / ${x.gas2 || "—"}`)}`).join("")}<h3>Arrêts du quart</h3>${stops.length ? `<div class="conteneur-tableau"><table><thead><tr><th>Zone</th><th>Début</th><th>Fin</th><th>Cause</th><th>Durée</th></tr></thead><tbody>${stops.map((s) => `<tr><td>${echapperTexteHtml(s.zone)}</td><td>${reglesMetier.formaterHeure(s.start)}</td><td>${reglesMetier.formaterHeure(s.end)}</td><td>${echapperTexteHtml(s.cause)}</td><td>${reglesMetier.formaterDuree(s.minutes)}</td></tr>`).join("")}</tbody></table></div>` : "<p>Aucun arrêt.</p>"}<h3>Groupes électrogènes</h3>${Object.entries(
       r.generators || {},
     )
       .map(([name, items]) =>
@@ -912,7 +947,7 @@ function afficherSynthese(id) {
     `<div class="fenetre-modale fenetre-synthese"><section class="tiroir-synthese panneau" data-rapport="${echapperTexteHtml(id)}">
       <div class="capture-synthese" id="captureSynthese">
         <div class="titre-synthese"><h2>Synthèse de la production du quart</h2></div>
-        <p class="infos-synthese">${formaterDate(r.date)} · ${echapperTexteHtml(r.shift)} · Équipe ${echapperTexteHtml(r.team)} — ${echapperTexteHtml(reglesMetier.EQUIPES[r.team])}</p>
+        <p class="infos-synthese">${formaterDate(r.date)} · ${echapperTexteHtml(r.quart)} · Équipe ${echapperTexteHtml(r.equipe)} — ${echapperTexteHtml(reglesMetier.EQUIPES[r.equipe])}</p>
         <div class="conteneur-tableau-synthese"><table class="tableau-synthese">
           <thead><tr><th>Information</th><th>Valeur</th></tr></thead>
           <tbody>${rows.map((row) => {
@@ -933,7 +968,7 @@ function afficherSynthese(id) {
       </div>
     </section></div>`,
   );
-  selectionner(".close-synthesis").onclick = () =>
+  selectionner(".fermer-synthese").onclick = () =>
     document.querySelector(".fenetre-synthese")?.remove();
   selectionner("#capturerSynthese").onclick = async () => {
     try {
@@ -988,7 +1023,7 @@ async function capturerTableauSynthese(report) {
     // Deux frames laissent Chromium recalculer la taille réelle du tableau.
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const bounds = node.getBoundingClientRect();
-    const safeName = String(report.shift || "Quart").replace(/[^\w-]+/g, "-");
+    const safeName = String(report.quart || "Quart").replace(/[^\w-]+/g, "-");
     return await rapportQuart.capturerSynthese({
       x: bounds.x,
       y: bounds.y,
@@ -1021,10 +1056,10 @@ async function exporterRapports(rs, datePrecise = "") {
       const d = reglesMetier.calculerIndicateurs(r);
       return [
         formaterDate(r.date),
-        r.shift,
-        r.team,
+        r.quart,
+        r.equipe,
         d.present,
-        r.production?.parcels,
+        r.production?.paniers,
         d.kg,
       ];
     }),

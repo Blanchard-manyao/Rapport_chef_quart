@@ -110,17 +110,17 @@ function lireEtatBase() {
   const result = { users: {}, reports: [], loginAttempts: {} };
   for (const row of baseSqlite.query("SELECT username, password_json FROM users"))
     result.users[row.username] = JSON.parse(row.password_json);
-  for (const row of baseSqlite.query("SELECT report_id, report_date, shift, team, staff_total, staff_absent, production_parcels, baskets_dry, tonnage_kg, payload_json FROM reports ORDER BY report_date, shift, team")) {
-    const report = JSON.parse(row.payload_json);
+  for (const row of baseSqlite.query("SELECT report_id, report_date, quart, equipe, staff_total, staff_absent, production_paniers, baskets_dry, tonnage_kg, payload_json FROM reports ORDER BY report_date, quart, equipe")) {
+    const report = normaliserRapport(JSON.parse(row.payload_json));
     report.id = row.report_id;
     report.date = row.report_date;
-    report.shift = row.shift;
-    report.team = row.team;
+    report.quart = row.quart;
+    report.equipe = row.equipe;
     report.staff ||= {};
     report.staff.total = Number(row.staff_total) || 0;
     report.staff.absent = Number(row.staff_absent) || 0;
     report.production ||= {};
-    report.production.parcels = Number(row.production_parcels) || 0;
+    report.production.paniers = Number(row.production_paniers) || 0;
     report.production.tonnageKg = Number(row.tonnage_kg) || 0;
     report.drying ||= {};
     report.drying.basketsDry = Number(row.baskets_dry) || 0;
@@ -135,6 +135,59 @@ function lireEtatBase() {
     result[row.setting] = JSON.parse(row.value_json);
   return result;
 }
+function normaliserRapport(report) {
+  if (report.quart === undefined && report.shift !== undefined) report.quart = report.shift;
+  if (report.equipe === undefined && report.team !== undefined) report.equipe = report.team;
+  delete report.shift;
+  delete report.team;
+
+  report.production ||= {};
+  if (report.production.paniers === undefined && report.production.parcels !== undefined)
+    report.production.paniers = report.production.parcels;
+  if (report.production.balesquart === undefined && report.production.balesShift !== undefined)
+    report.production.balesquart = report.production.balesShift;
+  delete report.production.parcels;
+  delete report.production.balesShift;
+
+  report.drying ||= {};
+  if (report.drying.sechoirs === undefined && report.drying.dryers !== undefined)
+    report.drying.sechoirs = report.drying.dryers;
+  delete report.drying.dryers;
+  for (const sechoir of report.drying.sechoirs || []) {
+    if (sechoir.bruleur1 === undefined && sechoir.burner1 !== undefined)
+      sechoir.bruleur1 = sechoir.burner1;
+    if (sechoir.bruleur2 === undefined && sechoir.burner2 !== undefined)
+      sechoir.bruleur2 = sechoir.burner2;
+    delete sechoir.burner1;
+    delete sechoir.burner2;
+  }
+  return report;
+}
+function migrerColonnesRapports() {
+  const colonnes = new Set(baseSqlite.query("PRAGMA table_info(reports)").map((colonne) => colonne.name));
+  let schemaModifie = false;
+  const renommages = [
+    ["shift", "quart"],
+    ["team", "equipe"],
+    ["production_parcels", "production_paniers"],
+  ];
+  baseSqlite.exec("BEGIN IMMEDIATE TRANSACTION");
+  try {
+    for (const [ancienNom, nouveauNom] of renommages) {
+      if (colonnes.has(ancienNom) && !colonnes.has(nouveauNom)) {
+        baseSqlite.exec(`ALTER TABLE reports RENAME COLUMN ${ancienNom} TO ${nouveauNom}`);
+        colonnes.delete(ancienNom);
+        colonnes.add(nouveauNom);
+        schemaModifie = true;
+      }
+    }
+    baseSqlite.exec("COMMIT");
+  } catch (erreur) {
+    try { baseSqlite.exec("ROLLBACK"); } catch {}
+    throw erreur;
+  }
+  return schemaModifie;
+}
 function ecrireEtatBase() {
   if (!baseSqlite) throw new Error("La base SQLCipher n’est pas ouverte.");
   baseSqlite.exec("BEGIN IMMEDIATE TRANSACTION");
@@ -144,15 +197,15 @@ function ecrireEtatBase() {
       baseSqlite.query("INSERT INTO users (username, password_json) VALUES (?, ?)", [username, JSON.stringify(password)]);
     for (const report of donnees.reports || [])
       baseSqlite.query(
-        "INSERT INTO reports (report_id, report_date, shift, team, staff_total, staff_absent, production_parcels, baskets_dry, tonnage_kg, payload_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO reports (report_id, report_date, quart, equipe, staff_total, staff_absent, production_paniers, baskets_dry, tonnage_kg, payload_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
           report.id,
           report.date,
-          report.shift,
-          report.team,
+          report.quart,
+          report.equipe,
           Number(report.staff?.total) || 0,
           Number(report.staff?.absent) || 0,
-          Number(report.production?.parcels) || 0,
+          Number(report.production?.paniers) || 0,
           Number(report.drying?.basketsDry) || 0,
           Number(report.production?.tonnageKg) || 0,
           JSON.stringify(report),
@@ -197,11 +250,11 @@ async function chargerBase() {
     CREATE TABLE IF NOT EXISTS reports (
       report_id TEXT PRIMARY KEY,
       report_date TEXT NOT NULL,
-      shift TEXT NOT NULL,
-      team TEXT NOT NULL,
+      quart TEXT NOT NULL,
+      equipe TEXT NOT NULL,
       staff_total INTEGER,
       staff_absent INTEGER,
-      production_parcels REAL,
+      production_paniers REAL,
       baskets_dry REAL,
       tonnage_kg REAL,
       payload_json TEXT NOT NULL
@@ -216,6 +269,7 @@ async function chargerBase() {
       value_json TEXT NOT NULL
     );
   `);
+  const schemaModifie = migrerColonnesRapports();
   donnees = databaseExisted
     ? lireEtatBase()
     : anciennesDonnees || {
@@ -227,13 +281,17 @@ async function chargerBase() {
         legacyConnected: true,
       };
   donnees.users ||= {};
-  donnees.reports ||= [];
+  donnees.reports = (donnees.reports || []).map(normaliserRapport);
   donnees.loginAttempts ||= {};
   if (!donnees.recoveryKey) {
     donnees.recoveryKey = cryptographie.randomBytes(20).toString("hex").toUpperCase();
     donnees.recoveryAcknowledged = false;
   }
-  if (!databaseExisted || !baseSqlite.query("SELECT 1 FROM app_settings WHERE setting = 'recoveryKey'").length)
+  if (
+    schemaModifie ||
+    !databaseExisted ||
+    !baseSqlite.query("SELECT 1 FROM app_settings WHERE setting = 'recoveryKey'").length
+  )
     ecrireEtatBase();
 }
 function sauvegarderBase() {
@@ -284,10 +342,10 @@ function validerPlagesHorairesRapport(report) {
       ...stop,
       label: `l’arrêt ${stop.zone || ""}`,
     })),
-    ...(report.drying?.dryers || []).flatMap((dryer) =>
-      (dryer.stops || []).map((stop) => ({
+    ...(report.drying?.sechoirs || []).flatMap((sechoir) =>
+      (sechoir.stops || []).map((stop) => ({
         ...stop,
-        label: `l’arrêt du séchoir ${dryer.number}`,
+        label: `l’arrêt du séchoir ${sechoir.number}`,
       })),
     ),
     ...Object.entries(report.generators || {}).flatMap(([name, periodes]) =>
@@ -367,7 +425,7 @@ ipcMain.handle("bootstrap", () => {
     logged = !!utilisateurActif;
   return {
     users: Object.keys(donnees.users),
-    teams: {
+    equipes: {
       A: "KONAN LUC",
       B: "EYO NESTOR",
       C: "DAMEY JEAN-BAPTISTE",
@@ -484,7 +542,7 @@ ipcMain.handle("auth", (_, { user, password, confirmation, recoveryKey }) => {
   return { ok: true, user };
 });
 ipcMain.handle(
-  "reset-team-password",
+  "reset-equipe-password",
   (_, { user, recoveryKey, next, confirmation }) => {
     if (!["A", "B", "C", "D"].includes(user))
       throw new Error(
@@ -561,15 +619,15 @@ ipcMain.handle("capture-synthesis", async (_, rect) => {
   if (!report) throw new Error("Le rapport à capturer est introuvable.");
   if (
     utilisateurActif !== "Administrateur" &&
-    report.team !== utilisateurActif
+    report.equipe !== utilisateurActif
   )
     throw new Error("Vous pouvez capturer uniquement le rapport de votre équipe.");
   const root = chemins.join(applicationElectron.getPath("documents"), "RapportQuart", "Captures");
   // Chaque image va dans le dossier de l’équipe du rapport, même si
   // l’administrateur a déclenché la capture depuis l’historique.
-  const dir = chemins.join(root, `Equipe-${report.team}`);
-  for (const team of ["A", "B", "C", "D"])
-    fichiers.mkdirSync(chemins.join(root, `Equipe-${team}`), { recursive: true });
+  const dir = chemins.join(root, `Equipe-${report.equipe}`);
+  for (const equipe of ["A", "B", "C", "D"])
+    fichiers.mkdirSync(chemins.join(root, `Equipe-${equipe}`), { recursive: true });
   fichiers.mkdirSync(dir, { recursive: true });
   const safe = Object.fromEntries(
     ["x", "y", "width", "height"].map((k) => [
@@ -722,7 +780,7 @@ ipcMain.handle("import-legacy-db", async (_, options = {}) => {
     }
   }
   const reports = table("rapport"),
-    dryers = table("sechoir_releve"),
+    sechoirs = table("sechoir_releve"),
     stops = table("arret"),
     gens = table("generateur_marche");
   if (!hasTable("rapport")) {
@@ -736,20 +794,20 @@ ipcMain.handle("import-legacy-db", async (_, options = {}) => {
       return m ? `${m[1].padStart(2, "0")}H${m[2]}` : String(v || "");
     };
   let imported = 0;
-  const dryerById = new Map();
-  dryers.forEach((x) => {
-    const a = dryerById.get(x.rapport_id) || [];
+  const sechoirById = new Map();
+  sechoirs.forEach((x) => {
+    const a = sechoirById.get(x.rapport_id) || [];
     a.push({
       number: num(x.sechoir),
       cycle: num(x.cycle_sec),
-      burner1: num(x.bruleur1),
-      burner2: num(x.bruleur2),
+      bruleur1: num(x.bruleur1),
+      bruleur2: num(x.bruleur2),
       counter: x.compteur || "",
       gas1: x.gaz || "",
       gas2: x.gaz2 || "",
       stops: [],
     });
-    dryerById.set(x.rapport_id, a);
+    sechoirById.set(x.rapport_id, a);
   });
   const stopById = new Map();
   stops.forEach((x) => {
@@ -774,14 +832,14 @@ ipcMain.handle("import-legacy-db", async (_, options = {}) => {
   for (const x of reports) {
     const id = x.id || `${x.date}_${x.quart}_${x.equipe}`;
     if (donnees.reports.some((r) => r.id === id)) continue;
-    const ds = dryerById.get(id) || [];
+    const ds = sechoirById.get(id) || [];
     for (const n of [1, 2, 3])
       if (!ds.some((d) => d.number === n))
         ds.push({
           number: n,
           cycle: 0,
-          burner1: 0,
-          burner2: 0,
+          bruleur1: 0,
+          bruleur2: 0,
           counter: "",
           gas1: "",
           gas2: "",
@@ -795,12 +853,12 @@ ipcMain.handle("import-legacy-db", async (_, options = {}) => {
       if (d) d.stops.push(s);
       else mainStops.push(s);
     }
-    const parcels = num(x.production),
+    const paniers = num(x.production),
       r = {
         id,
         date: String(x.date || ""),
-        shift: x.quart || "",
-        team: x.equipe || "",
+        quart: x.quart || "",
+        equipe: x.equipe || "",
         staff: {
           total: num(x.effectif_total),
           absent: num(x.absent),
@@ -823,12 +881,12 @@ ipcMain.handle("import-legacy-db", async (_, options = {}) => {
           basketAdvance: x.avance_panier || "",
           basketsWashed: x.panier_lave || "",
         },
-        drying: { basketsDry: num(x.paniers_seches), dryers: ds },
+        drying: { basketsDry: num(x.paniers_seches), sechoirs: ds },
         production: {
-          parcels,
-          tonnageKg: num(x.kg, parcels * 1260),
+          paniers,
+          tonnageKg: num(x.kg, paniers * 1260),
           balesStart: num(x.balles_debut),
-          balesShift: num(x.balles_quart),
+          balesquart: num(x.balles_quart),
           balesProcessed: num(x.balles_traitees),
           balesEnd: num(x.balles_fin),
         },
@@ -894,22 +952,22 @@ ipcMain.handle("save-report", (_, report) => {
     );
   // Vérifie les doublons contre la dernière version partagée des données.
   actualiserDonneesPartagees();
-  if (!report.date || !report.shift || !report.team)
+  if (!report.date || !report.quart || !report.equipe)
     throw new Error("Date, quart et équipe obligatoires.");
   validerPlagesHorairesRapport(report);
-  if ((report.drying?.dryers || []).some((dryer) => [dryer.burner1, dryer.burner2].some((value) => Number(value) < 0 || Number(value) > 130)))
+  if ((report.drying?.sechoirs || []).some((sechoir) => [sechoir.bruleur1, sechoir.bruleur2].some((value) => Number(value) < 0 || Number(value) > 130)))
     throw new Error("Les valeurs des brûleurs doivent être comprises entre 0 et 130.");
-  if (utilisateurActif !== "Administrateur" && utilisateurActif !== report.team)
+  if (utilisateurActif !== "Administrateur" && utilisateurActif !== report.equipe)
     throw new Error(
       "Vous ne pouvez enregistrer que les rapports de votre équipe.",
     );
-  report.id = `${report.date}_${report.shift}_${report.team}`;
+  report.id = `${report.date}_${report.quart}_${report.equipe}`;
   const sameSlot = donnees.reports.find(
-    (saved) => saved.date === report.date && saved.shift === report.shift && saved.id !== report.id,
+    (saved) => saved.date === report.date && saved.quart === report.quart && saved.id !== report.id,
   );
   if (sameSlot)
     throw new Error(
-      `Un rapport existe déjà pour cette date et ce quart (équipe ${sameSlot.team}).`,
+      `Un rapport existe déjà pour cette date et ce quart (équipe ${sameSlot.equipe}).`,
     );
   const oldIndex = donnees.reports.findIndex((r) => r.id === report.id);
   const old = oldIndex >= 0 ? donnees.reports[oldIndex] : null;
@@ -929,6 +987,78 @@ ipcMain.handle("save-report", (_, report) => {
   donnees.reports.push(report);
   sauvegarderBase();
   return report;
+});
+ipcMain.handle("sync-reports", async (_, { username, password } = {}) => {
+  if (utilisateurActif !== "Administrateur")
+    throw new Error("La synchronisation est réservée à l’administrateur local.");
+
+  actualiserDonneesPartagees();
+  const reports = (donnees.reports || []).filter(
+    (report) => report?.date && report?.quart && report?.equipe,
+  );
+  if (!reports.length) return { synced: 0, total: 0 };
+
+  const identifiant = String(username || "").trim();
+  let motDePasse = String(password || "");
+  if (!identifiant || !motDePasse || identifiant.length > 100 || motDePasse.length > 128)
+    throw new Error("Saisissez l’identifiant et le mot de passe du portail.");
+
+  const origin = "https://rapport-cq-admin-vercel-update.vercel.app";
+  const envoyer = async (url, options) =>
+    fetch(url, {
+      ...options,
+      redirect: "error",
+      signal: AbortSignal.timeout(30000),
+    });
+  let cookie = "";
+  try {
+    const login = await envoyer(`${origin}/api/admin/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: identifiant, password: motDePasse }),
+    });
+    motDePasse = "";
+    if (!login.ok) {
+      const details = await login.json().catch(() => ({}));
+      throw new Error(details.error || "Connexion au portail refusée.");
+    }
+    cookie = String(login.headers.get("set-cookie") || "").split(";", 1)[0];
+    if (!cookie.startsWith("rapport_cq_admin="))
+      throw new Error("Le portail n’a pas fourni de session valide.");
+
+    let synced = 0;
+    for (let index = 0; index < reports.length; index += 50) {
+      const batch = reports.slice(index, index + 50);
+      const response = await envoyer(`${origin}/api/admin/reports`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: cookie,
+        },
+        body: JSON.stringify({ reports: batch }),
+      });
+      if (!response.ok) {
+        const details = await response.json().catch(() => ({}));
+        throw new Error(
+          synced
+            ? `Synchronisation partielle : ${synced} rapport(s) envoyé(s). Relancez-la pour terminer.`
+            : details.error || "Le portail n’a pas accepté les rapports.",
+        );
+      }
+      synced += batch.length;
+    }
+    consignerEvenement("INFO", `${synced} rapport(s) synchronisé(s) vers le portail distant`);
+    return { synced, total: reports.length };
+  } catch (error) {
+    if (error.name === "TimeoutError" || error.name === "AbortError")
+      throw new Error("Le portail ne répond pas. Vérifiez la connexion puis relancez la synchronisation.");
+    if (error instanceof TypeError)
+      throw new Error("Connexion au portail impossible. Vérifiez votre connexion Internet.");
+    throw error;
+  } finally {
+    motDePasse = "";
+    cookie = "";
+  }
 });
 ipcMain.handle("export-xlsx", async (_, { name, rows }) => {
   if (utilisateurActif !== "Administrateur")

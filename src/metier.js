@@ -26,8 +26,8 @@ const MINUTES_PAR_QUART = 480;
 function creerRapportVide() {
   return {
     date: new Date().toISOString().slice(0, 10),
-    shift: QUARTS[2],
-    team: "A",
+    quart: QUARTS[2],
+    equipe: "A",
     staff: {
       total: 0,
       absent: 0,
@@ -47,11 +47,11 @@ function creerRapportVide() {
     },
     drying: {
       basketsDry: 0,
-      dryers: [1, 2, 3].map((number) => ({
+      sechoirs: [1, 2, 3].map((number) => ({
         number,
         cycle: 0,
-        burner1: 0,
-        burner2: 0,
+        bruleur1: 0,
+        bruleur2: 0,
         counter: "",
         gas1: "",
         gas2: "",
@@ -59,10 +59,10 @@ function creerRapportVide() {
       })),
     },
     production: {
-      parcels: 0,
+      paniers: 0,
       tonnageKg: 0,
       balesStart: 0,
-      balesShift: 0,
+      balesquart: 0,
       balesProcessed: 0,
       balesEnd: 0,
     },
@@ -107,7 +107,7 @@ function effectifPresent(r) {
   );
 }
 function calculerIndicateurs(r) {
-  const parcels = Number(r.production?.parcels || 0),
+  const paniers = Number(r.production?.paniers || 0),
     dry = Number(r.drying?.basketsDry || 0);
   const stops = r.stops || [];
   const stopTotals = {};
@@ -122,12 +122,12 @@ function calculerIndicateurs(r) {
     const zone = s.zone || "Autre";
     stopTotals[zone] = (stopTotals[zone] || 0) + dureeArret(s);
   });
-  (r.drying?.dryers || []).forEach((d) => {
+  (r.drying?.sechoirs || []).forEach((d) => {
     stopTotals[`Séchoir ${d.number}`] =
       (stopTotals[`Séchoir ${d.number}`] || 0) +
       (d.stops || []).reduce((a, s) => a + dureeArret(s), 0);
   });
-  const kg = parcels * KG_PAR_COLIS;
+  const kg = paniers * KG_PAR_COLIS;
   return {
     present: effectifPresent(r),
     kg,
@@ -135,12 +135,12 @@ function calculerIndicateurs(r) {
       (Number(r.prelavage?.buckets || 0) +
         Number(r.prelavage?.secondBuckets || 0)) *
       KG_PAR_GODET,
-    averageBasket: dry ? ((parcels * 36) / dry) * 35 : null,
-    averageBasketDiv28: dry ? (((parcels * 36) / dry) * 35) / 28 : null,
+    averageBasket: dry ? ((paniers * 36) / dry) * 35 : null,
+    averageBasketDiv28: dry ? (((paniers * 36) / dry) * 35) / 28 : null,
     stopTotals,
     generatorRunTotals,
     totalStops: Object.values(stopTotals).reduce((a, b) => a + b, 0),
-    dryers: (r.drying?.dryers || []).map((d) => {
+    sechoirs: (r.drying?.sechoirs || []).map((d) => {
       const total = (d.stops || []).reduce((a, s) => a + dureeArret(s), 0);
       return {
         ...d,
@@ -154,16 +154,16 @@ function calculerIndicateurs(r) {
 function validerRapport(r) {
   const errors = [];
   if (!r.date) errors.push("La date est obligatoire.");
-  if (!QUARTS.includes(r.shift)) errors.push("Sélectionnez un quart valide.");
-  if (!EQUIPES[r.team]) errors.push("Sélectionnez une équipe valide.");
+  if (!QUARTS.includes(r.quart)) errors.push("Sélectionnez un quart valide.");
+  if (!EQUIPES[r.equipe]) errors.push("Sélectionnez une équipe valide.");
   if (effectifPresent(r) < 0)
     errors.push("Les absences dépassent l’effectif total.");
-  if (Number(r.production?.parcels || 0) < 0)
+  if (Number(r.production?.paniers || 0) < 0)
     errors.push("La production ne peut pas être négative.");
-  for (const dryer of r.drying?.dryers || []) {
-    for (const [label, value] of [["Brûleur 1", dryer.burner1], ["Brûleur 2", dryer.burner2]]) {
+  for (const sechoir of r.drying?.sechoirs || []) {
+    for (const [label, value] of [["Brûleur 1", sechoir.bruleur1], ["Brûleur 2", sechoir.bruleur2]]) {
       if (Number(value) < 0 || Number(value) > 130)
-        errors.push(`${label} du séchoir ${dryer.number} doit être compris entre 0 et 130.`);
+        errors.push(`${label} du séchoir ${sechoir.number} doit être compris entre 0 et 130.`);
     }
   }
   const checkTimeRange = (startValue, endValue, label) => {
@@ -178,7 +178,7 @@ function validerRapport(r) {
   };
   for (const stop of [
     ...(r.stops || []),
-    ...(r.drying?.dryers || []).flatMap((d) => d.stops || []),
+    ...(r.drying?.sechoirs || []).flatMap((d) => d.stops || []),
   ]) {
     checkTimeRange(stop.start, stop.end, `l’arrêt ${stop.zone || ""}`);
   }
@@ -191,7 +191,7 @@ function validerRapport(r) {
 }
 function lignesSynthese(r) {
   const d = calculerIndicateurs(r),
-    dryers = d.dryers;
+    sechoirs = d.sechoirs;
   const asClock = (minutes) => {
     const total = Math.max(0, Math.trunc(Number(minutes) || 0));
     return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}:00`;
@@ -210,10 +210,10 @@ function lignesSynthese(r) {
 
   return [
     { label: "Nbre de Paniers", value: Number(r.drying?.basketsDry || 0) },
-    { label: "Nbre de Colis", value: Number(r.production?.parcels || 0) },
-    ...dryers.map((dryer) => ({
-      label: `Cycle du séchoir n°${dryer.number} (secondes)`,
-      value: dryer.cycle || 0,
+    { label: "Nbre de Colis", value: Number(r.production?.paniers || 0) },
+    ...sechoirs.map((sechoir) => ({
+      label: `Cycle du séchoir n°${sechoir.number} (secondes)`,
+      value: sechoir.cycle || 0,
     })),
     { label: "Production du quart (kg)", value: decimal2(d.kg), highlight: true },
     {
@@ -226,10 +226,10 @@ function lignesSynthese(r) {
       value: decimal2(d.averageBasketDiv28),
       highlight: true,
     },
-    ...dryers.map((dryer) => ({
-      label: `Tps d'arrêt séchoir n°${dryer.number} (h:mn:s)`,
-      value: asClock(dryer.stopMinutes),
-      tone: dryer.stopMinutes > 0 ? "danger" : "success",
+    ...sechoirs.map((sechoir) => ({
+      label: `Tps d'arrêt séchoir n°${sechoir.number} (h:mn:s)`,
+      value: asClock(sechoir.stopMinutes),
+      tone: sechoir.stopMinutes > 0 ? "danger" : "success",
     })),
     {
       label: "Tps d'arrêt Granulation Ligne n°1 (h:mn:s)",
@@ -244,7 +244,7 @@ function lignesSynthese(r) {
     { label: "Avances Paniers", value: r.granulation?.basketAdvance || "" },
     {
       label: "Balles détectées durant le quart",
-      value: r.production?.balesShift || 0,
+      value: r.production?.balesquart || 0,
     },
     {
       label: "Balles détectées traitées",
@@ -263,13 +263,13 @@ function texteRapport(r) {
   const display = (value) => (String(value ?? "").trim() ? value : "-");
   const hms = (minutes) => formaterDuree(minutes);
   const lines = [
-    `RAPPORT CHEF DE QUART ||${r.date} || Quart ${r.shift} || }`,
-    `${EQUIPES[r.team]} || Équipe ${r.team}`,
+    `RAPPORT CHEF DE QUART ||${r.date} || Quart ${r.quart} || }`,
+    `${EQUIPES[r.equipe]} || Équipe ${r.equipe}`,
     "====================",
     `EFFECTIF : ${r.staff?.total || 0} | Présent ${d.present} | Absent ${r.staff?.absent || 0} | Malade ${r.staff?.malade || 0} | Permission ${r.staff?.permission || 0} | congé : ${r.staff?.conge || 0}`,
     `ACCIDENT DE TRAVAIL : ${r.staff?.accidents || 0}`,
     "====================",
-    `Paniers séchés : ${r.drying?.basketsDry || 0} | Production ${r.production?.parcels || 0} colis, soit ${d.kg.toLocaleString("fr-FR")} kg`,
+    `Paniers séchés : ${r.drying?.basketsDry || 0} | Production ${r.production?.paniers || 0} colis, soit ${d.kg.toLocaleString("fr-FR")} kg`,
     `Poids moyen d'un panier : ${d.averageBasket == null ? "-" : d.averageBasket.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | Poids moyen d'un pain : ${d.averageBasketDiv28 == null ? "-" : d.averageBasketDiv28.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
     `Box en cours d'usinage : ${display(r.granulation?.box)}`,
     `Paniers granulés : ${r.granulation?.baskets || 0} | Titre d'acide : ${r.granulation?.acidTitre ?? 0} g/l | Conso acide : ${r.granulation?.acidConsumption || 0} kg`,
@@ -285,20 +285,20 @@ function texteRapport(r) {
   lines.push(`Avance panier fin : ${display(r.granulation?.basketAdvance)}`);
   lines.push("====================",);
 
-  for (const dryer of d.dryers) {
-    lines.push(`Séchoir ${dryer.number} : cycle ${dryer.cycle || 0} sec | brûleurs ${dryer.burner1 || 0}/${dryer.burner2 || 0} | arrêt ${hms(dryer.stopMinutes)} | marche ${hms(dryer.runMinutes)}`);
+  for (const sechoir of d.sechoirs) {
+    lines.push(`Séchoir ${sechoir.number} : cycle ${sechoir.cycle || 0} sec | brûleurs ${sechoir.bruleur1 || 0}/${sechoir.bruleur2 || 0} | arrêt ${hms(sechoir.stopMinutes)} | marche ${hms(sechoir.runMinutes)}`);
   }
 
   lines.push("====================",);
-  lines.push(`Balles détectées : début ${r.production?.balesStart || 0} | Pendant le quart ${r.production?.balesShift || 0} | Balles traitées ${r.production?.balesProcessed || 0} | Fin de quart ${r.production?.balesEnd || 0}`);
+  lines.push(`Balles détectées : début ${r.production?.balesStart || 0} | Pendant le quart ${r.production?.balesquart || 0} | Balles traitées ${r.production?.balesProcessed || 0} | Fin de quart ${r.production?.balesEnd || 0}`);
   lines.push(`Paniers lavés : ${display(r.granulation?.basketsWashed)}`);
   lines.push("====================",);
   lines.push("LES ARRÊTS DU QUART");
 
   const stops = [
     ...(r.stops || []),
-    ...(r.drying?.dryers || []).flatMap((dryer) =>
-      (dryer.stops || []).map((stop) => ({ ...stop, zone: `Séchoir ${dryer.number}` })),
+    ...(r.drying?.sechoirs || []).flatMap((sechoir) =>
+      (sechoir.stops || []).map((stop) => ({ ...stop, zone: `Séchoir ${sechoir.number}` })),
     ),
   ];
   if (stops.length) {
@@ -323,7 +323,7 @@ function texteRapport(r) {
   return lines.join("\n");
 }
 function identifiantRapport(r) {
-  return `${r.date}_${r.shift}_${r.team}`;
+  return `${r.date}_${r.quart}_${r.equipe}`;
 }
 window.ReglesMetier = Object.freeze({
   EQUIPES,
