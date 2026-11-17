@@ -43,7 +43,7 @@ La version JavaScript utilise une base SQLCipher 4 nommée `rapport-cq.db`, situ
 
 ## Portail administrateur distant (Vercel)
 
-Le portail web est à la racine du projet et son API se trouve dans `api/admin.mjs`. Vercel héberge l’application et Supabase fournit PostgreSQL via son API REST. La clé `service_role` est utilisée uniquement côté serveur et ne doit jamais être publiée dans le navigateur. La base locale reste la référence. Depuis l’application Windows, connectez-vous comme administrateur local puis choisissez **Synchroniser les rapports**. Saisissez l’identifiant et le mot de passe du portail pour envoyer les rapports par lots via HTTPS. Ces identifiants ne sont pas enregistrés sur le poste. Les rapports portant le même identifiant sont actualisés dans Supabase.
+Le portail web est à la racine du projet et son API se trouve dans `api/admin.mjs`. Vercel héberge l’application et Supabase fournit PostgreSQL via son API REST. La clé `service_role` est utilisée uniquement côté serveur et ne doit jamais être publiée dans le navigateur. La base locale reste la référence. Depuis l’application Windows, connectez-vous comme administrateur local puis choisissez **Synchroniser rapport**. Saisissez l’identifiant et le mot de passe du portail pour envoyer les rapports par lots via HTTPS. Ces identifiants ne sont pas enregistrés sur le poste. Les rapports portant le même identifiant sont actualisés dans Supabase.
 
 1. Créer un projet Supabase et exécuter `database/schema.sql` dans son SQL Editor.
 2. Importer le dépôt GitHub dans Vercel (Root Directory : `.`) et ajouter les variables `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY` depuis les paramètres API du projet Supabase.

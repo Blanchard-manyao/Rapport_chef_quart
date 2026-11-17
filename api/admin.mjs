@@ -15,7 +15,10 @@ async function supabase(path, options = {}) {
       ...options.headers,
     },
   });
-  if (!response.ok) throw new Error(`Supabase ${response.status}`);
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({}));
+    throw new Error(`Supabase ${response.status} ${detail.code || "unknown"}`);
+  }
   return response.status === 204 ? null : response.json();
 }
 
@@ -226,7 +229,8 @@ async function router(request) {
       return json({ ok: true, synced: reports.length }, 200, {
         "Cache-Control": "no-store",
       });
-    } catch {
+    } catch (error) {
+      console.error("Échec Supabase pendant la synchronisation des rapports:", error.message);
       return json({ error: "Impossible d’enregistrer les rapports." }, 503, {
         "Cache-Control": "no-store",
       });

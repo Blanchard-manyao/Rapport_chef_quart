@@ -1003,7 +1003,7 @@ ipcMain.handle("sync-reports", async (_, { username, password } = {}) => {
   if (!identifiant || !motDePasse || identifiant.length > 100 || motDePasse.length > 128)
     throw new Error("Saisissez l’identifiant et le mot de passe du portail.");
 
-  const origin = "https://rapport-cq-admin-vercel-update.vercel.app";
+  const origin = "https://rapportchefquart.vercel.app";
   const envoyer = async (url, options) =>
     fetch(url, {
       ...options,
