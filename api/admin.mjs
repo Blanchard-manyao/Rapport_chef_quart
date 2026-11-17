@@ -231,7 +231,18 @@ async function router(request) {
       });
     } catch (error) {
       console.error("Échec Supabase pendant la synchronisation des rapports:", error.message);
-      return json({ error: "Impossible d’enregistrer les rapports." }, 503, {
+      const diagnostic = String(error.message || "").match(/Supabase (\d{3}) ([A-Z0-9]+)/);
+      const code = diagnostic?.[2] || "inconnu";
+      let message = `Écriture Supabase refusée (code ${code}).`;
+      if (code === "PGRST205" || code === "42P01")
+        message = "La table reports est absente de Supabase. Exécutez database/schema.sql dans le SQL Editor du projet Supabase utilisé par Vercel.";
+      else if (code === "42501")
+        message = "Supabase refuse l’écriture. Vérifiez que SUPABASE_SERVICE_ROLE_KEY est la clé service_role du projet connecté.";
+      else if (code === "42703")
+        message = "Le schéma de la table reports ne correspond pas à l’application. Réexécutez database/schema.sql dans le projet Supabase utilisé par Vercel.";
+      else if (code === "401" || code === "403")
+        message = "Supabase refuse la clé configurée. Vérifiez SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY dans Vercel.";
+      return json({ error: message }, 503, {
         "Cache-Control": "no-store",
       });
     }
