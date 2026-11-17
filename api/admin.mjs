@@ -237,7 +237,7 @@ async function router(request) {
       if (code === "PGRST205" || code === "42P01")
         message = "La table reports est absente de Supabase. Exécutez database/schema.sql dans le SQL Editor du projet Supabase utilisé par Vercel.";
       else if (code === "42501")
-        message = "Supabase refuse l’écriture. Vérifiez que SUPABASE_SERVICE_ROLE_KEY est la clé service_role du projet connecté.";
+        message = "Droits SQL manquants sur public.reports. Dans Supabase, accordez SELECT, INSERT, UPDATE et DELETE sur public.reports au rôle service_role.";
       else if (code === "42703")
         message = "Le schéma de la table reports ne correspond pas à l’application. Réexécutez database/schema.sql dans le projet Supabase utilisé par Vercel.";
       else if (code === "401" || code === "403")

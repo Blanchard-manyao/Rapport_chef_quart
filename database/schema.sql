@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS admin_login_attempts (
 ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE admin_login_attempts ENABLE ROW LEVEL SECURITY;
 
+-- Keep API access restricted to the server-side service role.
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.reports TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.admin_login_attempts TO service_role;
+
 CREATE OR REPLACE FUNCTION record_admin_login_failure(p_login_key TEXT)
 RETURNS VOID
 LANGUAGE SQL
