@@ -258,19 +258,16 @@ function dialogueReinitialisationMotDePasse(user) {
 }
 function afficherStructureApplication() {
   const rangeActive = Boolean(etatInterface.debutPeriode || etatInterface.finPeriode);
-  const tabs = etatInterface.administrateur
-    ? [
-        ["home", "Tableau de bord"],
-        ["reports", "Rapports enregistrés"],
-        ["stops", "Temps d’arrêt par zone"],
-      ]
-    : [
-        ["create", "Créer un rapport"],
-        ["history", "Historique"],
-      ];
+  const tabs = [
+    ["home", "Tableau de bord"],
+    ...(!etatInterface.administrateur ? [["create", "Créer un rapport"]] : []),
+    ["reports", "Rapports enregistrés"],
+    ...(!etatInterface.administrateur ? [["history", "Historique"]] : []),
+    ["stops", "Temps d’arrêt par zone"],
+  ];
   const [year, month] = etatInterface.mois.split("-").map(Number),
     count = Number.isFinite(year) && month ? new Date(year, month, 0).getDate() : 31,
-    showFilters = etatInterface.administrateur;
+    showFilters = Boolean(etatInterface.utilisateur);
   const titles = {
     home: "Tableau de bord",
     create: "Créer un rapport",
@@ -708,7 +705,8 @@ function afficherCreation(el) {
 }
 function afficherRapports(el) {
   const rs = rapportsPeriode();
-  el.innerHTML = `<section class="panneau"><h2>Rapports enregistrés</h2>${tableauRapports(rs, true)}<div class="actions"><button id="exporterRapports" class="secondaire">Exporter Excel</button></div><h3>Arrêts du rapport sélectionné</h3><div id="arretsRapport" class="discret">Sélectionnez un rapport dans le tableau.</div></section>`;
+  const exportButton = etatInterface.administrateur ? '<div class="actions"><button id="exporterRapports" class="secondaire">Exporter Excel</button></div>' : "";
+  el.innerHTML = `<section class="panneau"><h2>Rapports enregistrés</h2>${tableauRapports(rs, true)}${exportButton}<h3>Arrêts du rapport sélectionné</h3><div id="arretsRapport" class="discret">Sélectionnez un rapport dans le tableau.</div></section>`;
   lierBoutonsRapport();
   document.querySelectorAll("tbody tr[data-identifiant]").forEach((tr) => {
     tr.onclick = () => afficherArrets(tr.dataset.identifiant);

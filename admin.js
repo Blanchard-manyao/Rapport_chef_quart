@@ -30,14 +30,12 @@ const echapper = (valeur) => String(valeur ?? "").replace(/[&<>"']/g, (caractere
 const formaterDate = (date) => date ? new Date(`${date}T00:00:00`).toLocaleDateString("fr-FR") : "—";
 const formaterNombre = (valeur) => valeur.toLocaleString("fr-FR");
 
-function exporterCsv(nom, colonnes, lignes) {
-  const cellule = (valeur) => `"${String(valeur ?? "").replaceAll('"', '""')}"`;
-  const contenu = [colonnes, ...lignes].map((ligne) => ligne.map(cellule).join(";")).join("\r\n");
-  const lien = document.createElement("a");
-  lien.href = URL.createObjectURL(new Blob([`\uFEFF${contenu}`], { type: "text/csv;charset=utf-8" }));
-  lien.download = nom;
-  lien.click();
-  setTimeout(() => URL.revokeObjectURL(lien.href), 1000);
+function exporterXlsx(nom, nomFeuille, colonnes, lignes) {
+  const feuille = XLSX.utils.aoa_to_sheet([colonnes, ...lignes]);
+  feuille["!cols"] = colonnes.map((titre) => ({ wch: Math.min(48, Math.max(14, titre.length + 2)) }));
+  const classeur = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(classeur, feuille, nomFeuille);
+  XLSX.writeFile(classeur, nom);
 }
 
 function suffixePeriode() {
@@ -47,7 +45,7 @@ function suffixePeriode() {
 
 function exporterRapports() {
   const rapports = filtrerRapports();
-  exporterCsv(`rapports_${suffixePeriode()}.csv`,
+  exporterXlsx(`rapports_${suffixePeriode()}.xlsx`, "Rapports",
     ["Date", "Quart", "Équipe", "Effectif total", "Effectif absent", "Production (colis)", "Tonnage (kg)", "Données complètes (JSON)"],
     rapports.map((rapport) => [rapport.date, rapport.quart, rapport.equipe, rapport.staff?.total,
       ["absent", "malade", "permission", "conge"].reduce((total, cle) => total + nombre(rapport.staff?.[cle]), 0),
@@ -56,7 +54,7 @@ function exporterRapports() {
 }
 
 function exporterArrets(arrets) {
-  exporterCsv(`arrets_${suffixePeriode()}.csv`,
+  exporterXlsx(`arrets_${suffixePeriode()}.xlsx`, "Arrêts",
     ["Date", "Quart", "Équipe", "Zone", "Début", "Fin", "Cause", "Durée (minutes)"],
     arrets.map((arret) => [arret.date, arret.quart, arret.equipe, arret.zone, arret.start, arret.end, arret.cause, arret.minutes]),
   );
@@ -164,7 +162,7 @@ function afficherRapportsEnregistres() {
     const presents = nombre(staff.total) - ["absent", "malade", "permission", "conge"].reduce((total, cle) => total + nombre(staff[cle]), 0);
     return `<tr><td>${formaterDate(rapport.date)}</td><td>${echapper(rapport.quart || "—")}</td><td>${echapper(rapport.equipe || "—")}</td><td>${presents}</td><td>${formaterNombre(nombre(rapport.production?.paniers))}</td><td>${formaterNombre(nombre(rapport.production?.tonnageKg))}</td></tr>`;
   }).join("");
-  elements.contenu.innerHTML = `<section class="panneau"><div class="entete-tableau"><h2>Rapports enregistrés</h2><button class="bouton secondaire" id="exporterRapports" type="button">Exporter les rapports CSV</button></div><p class="discret">${rapports.length} rapport(s) pour la période sélectionnée.</p><div class="tableau-defilement"><table><thead><tr><th>Date</th><th>Quart</th><th>Équipe</th><th>Effectif présent</th><th>Production</th><th>Tonnage (kg)</th></tr></thead><tbody>${lignes || '<tr><td colspan="6">Aucun rapport enregistré pour cette période.</td></tr>'}</tbody></table></div></section>`;
+  elements.contenu.innerHTML = `<section class="panneau"><div class="entete-tableau"><h2>Rapports enregistrés</h2><button class="bouton secondaire" id="exporterRapports" type="button">Exporter les rapports Excel</button></div><p class="discret">${rapports.length} rapport(s) pour la période sélectionnée.</p><div class="tableau-defilement"><table><thead><tr><th>Date</th><th>Quart</th><th>Équipe</th><th>Effectif présent</th><th>Production</th><th>Tonnage (kg)</th></tr></thead><tbody>${lignes || '<tr><td colspan="6">Aucun rapport enregistré pour cette période.</td></tr>'}</tbody></table></div></section>`;
   document.querySelector("#exporterRapports").onclick = exporterRapports;
 }
 
@@ -175,7 +173,7 @@ function afficherTempsArret() {
   const totaux = zonesArret.map((zone) => ({ zone, minutes: somme(arrets.filter((arret) => arret.zone === zone).map((arret) => arret.minutes)) }));
   const cartes = totaux.map(({ zone, minutes }) => `<article class="carte-zone"><span>${echapper(zone)}</span><b>${duree(minutes)}</b></article>`).join("");
   const lignes = arrets.map((arret) => `<tr><td>${formaterDate(arret.date)}</td><td>${echapper(arret.quart || "—")}</td><td>${echapper(arret.equipe || "—")}</td><td>${echapper(arret.zone || "—")}</td><td>${echapper(arret.start || "—")}–${echapper(arret.end || "—")}</td><td>${echapper(arret.cause || "—")}</td><td>${duree(arret.minutes)}</td></tr>`).join("");
-  elements.contenu.innerHTML = `<section class="panneau resume-arrets"><div class="entete-tableau"><h2>Temps d’arrêt par zone</h2><button class="bouton secondaire" id="exporterArrets" type="button">Exporter les arrêts CSV</button></div><div class="grille-zones">${cartes}</div></section><section class="panneau details-arrets"><h2>Détail par jour et quart — un arrêt distinct par ligne</h2><div class="tableau-defilement"><table><thead><tr><th>Jour</th><th>Quart</th><th>Équipe</th><th>Zone</th><th>Heures</th><th>Cause</th><th>Durée</th></tr></thead><tbody>${lignes || '<tr><td colspan="7">Aucun arrêt enregistré pour cette période.</td></tr>'}</tbody></table></div></section>`;
+  elements.contenu.innerHTML = `<section class="panneau resume-arrets"><div class="entete-tableau"><h2>Temps d’arrêt par zone</h2><button class="bouton secondaire" id="exporterArrets" type="button">Exporter les arrêts Excel</button></div><div class="grille-zones">${cartes}</div></section><section class="panneau details-arrets"><h2>Détail par jour et quart — un arrêt distinct par ligne</h2><div class="tableau-defilement"><table><thead><tr><th>Jour</th><th>Quart</th><th>Équipe</th><th>Zone</th><th>Heures</th><th>Cause</th><th>Durée</th></tr></thead><tbody>${lignes || '<tr><td colspan="7">Aucun arrêt enregistré pour cette période.</td></tr>'}</tbody></table></div></section>`;
   document.querySelector("#exporterArrets").onclick = () => exporterArrets(arrets);
 }
 
