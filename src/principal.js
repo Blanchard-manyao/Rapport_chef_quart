@@ -989,12 +989,13 @@ ipcMain.handle("save-report", (_, report) => {
   return report;
 });
 ipcMain.handle("sync-reports", async (_, { username, password } = {}) => {
-  if (utilisateurActif !== "Administrateur")
-    throw new Error("La synchronisation est réservée à l’administrateur local.");
+  if (!utilisateurActif)
+    throw new Error("Connectez-vous avant de synchroniser les rapports.");
 
   actualiserDonneesPartagees();
   const reports = (donnees.reports || []).filter(
-    (report) => report?.date && report?.quart && report?.equipe,
+    (report) => report?.date && report?.quart && report?.equipe &&
+      (utilisateurActif === "Administrateur" || report.equipe === utilisateurActif),
   );
   if (!reports.length) return { synced: 0, total: 0 };
 

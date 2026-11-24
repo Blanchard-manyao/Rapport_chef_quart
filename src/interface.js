@@ -281,7 +281,8 @@ function afficherStructureApplication() {
   const equipeActions = etatInterface.administrateur
     ? ""
     : '<button id="changerEquipe" class="secondaire">Changer d’équipe</button>';
-  return `<div class="coquille"><aside class="barre-laterale"><div class="usine">EXAT Missehi<br><small>Rapport de quart</small></div>${etatInterface.administrateur ? '<button id="synchroniserRapports" class="bouton-synchronisation">⇧ Synchroniser les rapports</button>' : ""}${tabs.map(([k, t]) => `<button data-onglet="${k}" class="${etatInterface.onglet === k ? "actif" : ""}">${t}</button>`).join("")}${equipeActions}<button id="motDePasse" class="secondaire">Changer le mot de passe</button><button id="deconnexion" class="deconnexion">Déconnexion</button></aside><section class="principal"><header class="entete"><h1>${titles[etatInterface.onglet]}</h1>${
+  const peutSynchroniser = etatInterface.administrateur || ["A", "B", "C", "D"].includes(etatInterface.utilisateur);
+  return `<div class="coquille"><aside class="barre-laterale"><div class="usine">EXAT Missehi<br><small>Rapport de quart</small></div>${peutSynchroniser ? '<button id="synchroniserRapports" class="bouton-synchronisation">⇧ Synchroniser les rapports</button>' : ""}${tabs.map(([k, t]) => `<button data-onglet="${k}" class="${etatInterface.onglet === k ? "actif" : ""}">${t}</button>`).join("")}${equipeActions}<button id="motDePasse" class="secondaire">Changer le mot de passe</button><button id="deconnexion" class="deconnexion">Déconnexion</button></aside><section class="principal"><header class="entete"><h1>${titles[etatInterface.onglet]}</h1>${
     showFilters
       ? `<div class="filtres"><label>Mois <input id="mois" type="month" value="${etatInterface.mois}" ${rangeActive ? "disabled" : ""}></label><label>Jour <select id="jour" ${rangeActive ? "disabled" : ""}><option value="">Tous les jours</option>${Array.from(
           { length: count },
@@ -428,17 +429,21 @@ function dialogueMotDePasse() {
   };
 }
 function dialogueSynchronisationDistante() {
-  const total = etatInterface.rapports.length;
+  const rapportsUtilisateur = etatInterface.administrateur
+    ? etatInterface.rapports
+    : etatInterface.rapports.filter((rapport) => rapport.equipe === etatInterface.utilisateur);
+  const total = rapportsUtilisateur.length;
   const modal = document.createElement("div");
   modal.className = "fenetre-modale";
-  modal.innerHTML = `<section class="panneau"><h2>Synchroniser les rapports</h2><p>${total} rapport(s) seront envoyés vers le portail administrateur Vercel par connexion HTTPS. Les rapports déjà présents seront actualisés. Les identifiants du portail ne seront pas enregistrés sur ce poste.</p><form id="formulaireSynchronisation"><label class="champ">Identifiant du portail<input name="username" required maxlength="100" autocomplete="username"></label><label class="champ">Mot de passe du portail<input name="password" type="password" required maxlength="128" autocomplete="current-password"></label><p class="discret" id="etatSynchronisation"></p><div class="actions"><button type="submit" ${total ? "" : "disabled"}>Envoyer ${total} rapport(s)</button><button type="button" class="secondaire" onclick="this.closest('.fenetre-modale').remove()">Annuler</button></div></form></section>`;
+  const portee = etatInterface.administrateur ? "tous les rapports locaux" : `les rapports de l’équipe ${etatInterface.utilisateur}`;
+  modal.innerHTML = `<section class="panneau"><h2>Synchroniser les rapports</h2><p>${total} rapport(s) (${portee}) seront envoyés vers le portail administrateur Vercel par connexion HTTPS. Les rapports déjà présents seront actualisés. Les identifiants du portail ne seront pas enregistrés sur ce poste.</p><form id="formulaireSynchronisation"><label class="champ">Identifiant du portail<input name="username" required maxlength="100" autocomplete="username"></label><label class="champ">Mot de passe du portail<input name="password" type="password" required maxlength="128" autocomplete="current-password"></label><p class="discret" id="etatSynchronisation"></p><div class="actions"><button type="submit" ${total ? "" : "disabled"}>Envoyer ${total} rapport(s)</button><button type="button" class="secondaire" onclick="this.closest('.fenetre-modale').remove()">Annuler</button></div></form></section>`;
   document.body.append(modal);
   const form = modal.querySelector("#formulaireSynchronisation");
   const status = modal.querySelector("#etatSynchronisation");
   const submit = form.querySelector('button[type="submit"]');
   form.onsubmit = async (event) => {
     event.preventDefault();
-    if (!etatInterface.administrateur) {
+    if (!etatInterface.administrateur && !["A", "B", "C", "D"].includes(etatInterface.utilisateur)) {
       modal.remove();
       return;
     }
