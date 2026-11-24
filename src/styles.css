@@ -59,6 +59,16 @@ button.alerte {
 .barre-laterale button.actif {
   background: #2E6F40;
 }
+.barre-laterale .bouton-synchronisation {
+  margin: 0 0 8px;
+  border: 1px solid #78b78b;
+  background: #2e6f40;
+  color: #fff;
+  font-weight: 700;
+}
+.barre-laterale .bouton-synchronisation:hover {
+  background: #3c8651;
+}
 .barre-laterale .deconnexion {
   margin-top: auto;
   background: #2E6F40;
