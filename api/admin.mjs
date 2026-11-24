@@ -21,7 +21,13 @@ async function supabase(path, options = {}) {
   });
   if (!response.ok) {
     const detail = await response.json().catch(() => ({}));
-    throw new Error(`Supabase ${response.status} ${detail.code || "unknown"}`);
+    const error = new Error(
+      `Supabase ${response.status} ${detail.code || "unknown"}: ${String(detail.message || "Réponse sans message").slice(0, 240)}`,
+    );
+    error.status = response.status;
+    error.code = detail.code || "unknown";
+    error.detail = String(detail.message || "").slice(0, 240);
+    throw error;
   }
   return response.status === 204 ? null : response.json();
 }
@@ -235,16 +241,20 @@ async function router(request) {
       });
     } catch (error) {
       console.error("Échec Supabase pendant la synchronisation des rapports:", error.message);
-      const diagnostic = String(error.message || "").match(/Supabase (\d{3}) ([A-Z0-9]+)/);
-      const code = diagnostic?.[2] || "inconnu";
-      let message = `Écriture Supabase refusée (code ${code}).`;
+      const diagnostic = String(error.message || "").match(/Supabase (\d{3}) ([A-Za-z0-9_-]+)/);
+      const status = error.status || Number(diagnostic?.[1]) || 0;
+      const code = error.code || diagnostic?.[2] || "inconnu";
+      const detail = String(error.detail || "").trim();
+      let message = `Écriture Supabase refusée${status ? ` (HTTP ${status})` : ""} (code ${code})${detail ? ` : ${detail}` : "."}`;
       if (code === "PGRST205" || code === "42P01")
         message = "La table reports est absente de Supabase. Exécutez database/schema.sql dans le SQL Editor du projet Supabase utilisé par Vercel.";
+      else if (code === "42501" && /row-level security|violates.*policy/i.test(detail))
+        message = "Supabase applique encore une politique RLS : vérifiez que SUPABASE_SERVICE_ROLE_KEY contient la clé serveur du même projet (sb_secret_… ou service_role), jamais la clé publishable/anon.";
       else if (code === "42501")
         message = "Droits SQL manquants sur public.reports. Dans Supabase, accordez SELECT, INSERT, UPDATE et DELETE sur public.reports au rôle service_role.";
       else if (code === "42703")
         message = "Le schéma de la table reports ne correspond pas à l’application. Réexécutez database/schema.sql dans le projet Supabase utilisé par Vercel.";
-      else if (code === "401" || code === "403")
+      else if (status === 401 || status === 403 || code === "401" || code === "403")
         message = "Supabase refuse la clé configurée. Vérifiez SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY dans Vercel.";
       return json({ error: message }, 503, {
         "Cache-Control": "no-store",
