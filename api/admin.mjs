@@ -246,7 +246,9 @@ async function router(request) {
       const code = error.code || diagnostic?.[2] || "inconnu";
       const detail = String(error.detail || "").trim();
       let message = `Écriture Supabase refusée${status ? ` (HTTP ${status})` : ""} (code ${code})${detail ? ` : ${detail}` : "."}`;
-      if (code === "PGRST205" || code === "42P01")
+      if (!status && code === "unknown" && !detail)
+        message = "Connexion à Supabase impossible depuis Vercel : aucune réponse HTTP reçue. Vérifiez SUPABASE_URL et l’accès réseau du projet Vercel.";
+      else if (code === "PGRST205" || code === "42P01")
         message = "La table reports est absente de Supabase. Exécutez database/schema.sql dans le SQL Editor du projet Supabase utilisé par Vercel.";
       else if (code === "42501" && /row-level security|violates.*policy/i.test(detail))
         message = "Supabase applique encore une politique RLS : vérifiez que SUPABASE_SERVICE_ROLE_KEY contient la clé serveur du même projet (sb_secret_… ou service_role), jamais la clé publishable/anon.";
