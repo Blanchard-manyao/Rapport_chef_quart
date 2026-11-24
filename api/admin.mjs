@@ -6,11 +6,15 @@ const supabaseUrl = () => process.env.SUPABASE_URL?.replace(/\/$/, "");
 const supabaseKey = () => process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 async function supabase(path, options = {}) {
+  const key = supabaseKey();
   const response = await fetch(`${supabaseUrl()}/rest/v1/${path}`, {
     ...options,
     headers: {
-      apikey: supabaseKey(),
-      Authorization: `Bearer ${supabaseKey()}`,
+      apikey: key,
+      // New sb_secret_* keys are opaque API keys, not JWTs. Sending one as
+      // Authorization makes PostgREST treat the request as an unprivileged
+      // caller, so use the Bearer header only for legacy service_role JWTs.
+      ...(key?.startsWith("eyJ") ? { Authorization: `Bearer ${key}` } : {}),
       "Content-Type": "application/json",
       ...options.headers,
     },
