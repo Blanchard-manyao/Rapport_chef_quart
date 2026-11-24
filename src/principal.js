@@ -28,6 +28,7 @@ let cleSqlCipher = null;
 const DELAI_MODIFICATION_RAPPORT_HEURES = 8;
 const cheminBaseDonnees = () => chemins.join(applicationElectron.getPath("userData"), "rapport-cq.db");
 const cheminAncienFichierDonnees = () => chemins.join(applicationElectron.getPath("userData"), "rapport-cq.dat");
+const cheminIdentifiantsPortail = () => chemins.join(applicationElectron.getPath("userData"), "identifiants-portail.dat");
 const cheminVirtuelSqlite = "/rapport-cq.db";
 const entropieSqlCipher = Buffer.from("RapportQuart.Cle.v1", "utf8");
 const ancienneBaseDeDonnees = () =>
@@ -48,6 +49,25 @@ function consignerEvenement(level, message) {
       `${new Date().toISOString()} [${process.env.USERNAME || "Windows"}@${process.env.COMPUTERNAME || "PC"}] ${level} ${message}\n`,
     );
   } catch {}
+}
+function lireIdentifiantsPortail() {
+  if (!safeStorage.isEncryptionAvailable()) return null;
+  try {
+    const identifiants = JSON.parse(safeStorage.decryptString(fichiers.readFileSync(cheminIdentifiantsPortail())));
+    return identifiants?.username && identifiants?.password ? identifiants : null;
+  } catch {
+    return null;
+  }
+}
+function enregistrerIdentifiantsPortail(identifiants) {
+  if (!safeStorage.isEncryptionAvailable())
+    throw new Error("Le chiffrement Windows n’est pas disponible sur ce poste.");
+  const repertoire = applicationElectron.getPath("userData");
+  fichiers.mkdirSync(repertoire, { recursive: true });
+  const chemin = cheminIdentifiantsPortail();
+  const temporaire = `${chemin}.${process.pid}.tmp`;
+  fichiers.writeFileSync(temporaire, safeStorage.encryptString(JSON.stringify(identifiants)));
+  fichiers.renameSync(temporaire, chemin);
 }
 let donnees = { users: {}, reports: [] };
 function lireAncienFichierDonnees() {
@@ -988,7 +1008,18 @@ ipcMain.handle("save-report", (_, report) => {
   sauvegarderBase();
   return report;
 });
-ipcMain.handle("sync-reports", async (_, { username, password } = {}) => {
+ipcMain.handle("configure-sync-credentials", (_, { username, password } = {}) => {
+  if (utilisateurActif !== "Administrateur")
+    throw new Error("Seul l’administrateur local peut configurer la synchronisation.");
+  const nomUtilisateur = String(username || "").trim();
+  const motDePasse = String(password || "");
+  if (!nomUtilisateur || !motDePasse || nomUtilisateur.length > 100 || motDePasse.length > 128)
+    throw new Error("Saisissez un identifiant et un mot de passe valides pour le portail.");
+  enregistrerIdentifiantsPortail({ username: nomUtilisateur, password: motDePasse });
+  consignerEvenement("INFO", "Identifiants du portail enregistrés dans le stockage sécurisé Windows");
+  return true;
+});
+ipcMain.handle("sync-reports", async () => {
   if (!utilisateurActif)
     throw new Error("Connectez-vous avant de synchroniser les rapports.");
 
@@ -999,10 +1030,11 @@ ipcMain.handle("sync-reports", async (_, { username, password } = {}) => {
   );
   if (!reports.length) return { synced: 0, total: 0 };
 
-  const identifiant = String(username || "").trim();
-  let motDePasse = String(password || "");
-  if (!identifiant || !motDePasse || identifiant.length > 100 || motDePasse.length > 128)
-    throw new Error("Saisissez l’identifiant et le mot de passe du portail.");
+  const identifiantsPortail = lireIdentifiantsPortail();
+  if (!identifiantsPortail)
+    throw new Error("L’administrateur local doit configurer les accès du portail une fois sur ce poste.");
+  const identifiant = identifiantsPortail.username;
+  let motDePasse = identifiantsPortail.password;
 
   const origin = "https://rapportchefquart.vercel.app";
   const envoyer = async (url, options) =>

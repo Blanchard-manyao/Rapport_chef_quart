@@ -279,7 +279,7 @@ function afficherStructureApplication() {
     ? ""
     : '<button id="changerEquipe" class="secondaire">Changer d’équipe</button>';
   const peutSynchroniser = etatInterface.administrateur || ["A", "B", "C", "D"].includes(etatInterface.utilisateur);
-  return `<div class="coquille"><aside class="barre-laterale"><div class="usine">EXAT Missehi<br><small>Rapport de quart</small></div>${peutSynchroniser ? '<button id="synchroniserRapports" class="bouton-synchronisation">⇧ Synchroniser les rapports</button>' : ""}${tabs.map(([k, t]) => `<button data-onglet="${k}" class="${etatInterface.onglet === k ? "actif" : ""}">${t}</button>`).join("")}${equipeActions}<button id="motDePasse" class="secondaire">Changer le mot de passe</button><button id="deconnexion" class="deconnexion">Déconnexion</button></aside><section class="principal"><header class="entete"><h1>${titles[etatInterface.onglet]}</h1>${
+  return `<div class="coquille"><aside class="barre-laterale"><div class="usine">EXAT Missehi<br><small>Rapport de quart</small></div>${etatInterface.administrateur ? '<button id="configurerSynchronisation" class="secondaire">Configurer l’accès au portail</button>' : ""}${peutSynchroniser ? '<button id="synchroniserRapports" class="bouton-synchronisation">⇧ Synchroniser les rapports</button>' : ""}${tabs.map(([k, t]) => `<button data-onglet="${k}" class="${etatInterface.onglet === k ? "actif" : ""}">${t}</button>`).join("")}${equipeActions}<button id="motDePasse" class="secondaire">Changer le mot de passe</button><button id="deconnexion" class="deconnexion">Déconnexion</button></aside><section class="principal"><header class="entete"><h1>${titles[etatInterface.onglet]}</h1>${
     showFilters
       ? `<div class="filtres"><label>Mois <input id="mois" type="month" value="${etatInterface.mois}" ${rangeActive ? "disabled" : ""}></label><label>Jour <select id="jour" ${rangeActive ? "disabled" : ""}><option value="">Tous les jours</option>${Array.from(
           { length: count },
@@ -310,6 +310,8 @@ function afficherEcran() {
   selectionner("#motDePasse").onclick = dialogueMotDePasse;
   if (selectionner("#synchroniserRapports"))
     selectionner("#synchroniserRapports").onclick = dialogueSynchronisationDistante;
+  if (selectionner("#configurerSynchronisation"))
+    selectionner("#configurerSynchronisation").onclick = dialogueConfigurationSynchronisation;
   if (!etatInterface.administrateur)
     selectionner("#changerEquipe").onclick = () => confirmerFermetureSession(
       "Voulez-vous vous déconnecter pour changer d’équipe ?",
@@ -433,31 +435,55 @@ function dialogueSynchronisationDistante() {
   const modal = document.createElement("div");
   modal.className = "fenetre-modale";
   const portee = etatInterface.administrateur ? "tous les rapports locaux" : `les rapports de l’équipe ${etatInterface.utilisateur}`;
-  modal.innerHTML = `<section class="panneau"><h2>Synchroniser les rapports</h2><p>${total} rapport(s) (${portee}) seront envoyés vers le portail administrateur Vercel par connexion HTTPS. Les rapports déjà présents seront actualisés. Les identifiants du portail ne seront pas enregistrés sur ce poste.</p><form id="formulaireSynchronisation"><label class="champ">Identifiant du portail<input name="username" required maxlength="100" autocomplete="username"></label><label class="champ">Mot de passe du portail<input name="password" type="password" required maxlength="128" autocomplete="current-password"></label><p class="discret" id="etatSynchronisation"></p><div class="actions"><button type="submit" ${total ? "" : "disabled"}>Envoyer ${total} rapport(s)</button><button type="button" class="secondaire" onclick="this.closest('.fenetre-modale').remove()">Annuler</button></div></form></section>`;
+  modal.innerHTML = `<section class="panneau"><h2>Synchroniser les rapports</h2><p>${total} rapport(s) (${portee}) seront envoyés au portail par connexion HTTPS. Les accès ont été enregistrés une fois par l’administrateur local et sont chiffrés sur ce poste. Les chefs de quart n’ont rien à saisir.</p><form id="formulaireSynchronisation"><p class="discret" id="etatSynchronisation"></p><div class="actions"><button type="submit" ${total ? "" : "disabled"}>Synchroniser ${total} rapport(s)</button>${etatInterface.administrateur ? '<button type="button" class="secondaire" id="ouvrirConfigurationDepuisSync">Configurer les accès</button>' : ""}<button type="button" class="secondaire" onclick="this.closest('.fenetre-modale').remove()">Fermer</button></div></form></section>`;
   document.body.append(modal);
   const form = modal.querySelector("#formulaireSynchronisation");
   const status = modal.querySelector("#etatSynchronisation");
   const submit = form.querySelector('button[type="submit"]');
+  const ouvrirConfiguration = modal.querySelector("#ouvrirConfigurationDepuisSync");
+  if (ouvrirConfiguration) ouvrirConfiguration.onclick = () => { modal.remove(); dialogueConfigurationSynchronisation(); };
   form.onsubmit = async (event) => {
     event.preventDefault();
     if (!etatInterface.administrateur && !["A", "B", "C", "D"].includes(etatInterface.utilisateur)) {
       modal.remove();
       return;
     }
-    const values = new FormData(form);
-    const username = String(values.get("username") || "");
-    const password = String(values.get("password") || "");
     submit.disabled = true;
     status.textContent = "Synchronisation en cours…";
     try {
-      const result = await rapportQuart.synchroniserRapportsDistants({ username, password });
-      form.elements.password.value = "";
+      const result = await rapportQuart.synchroniserRapportsDistants();
       status.textContent = `${result.synced} rapport(s) synchronisé(s) sur ${result.total}.`;
-      form.querySelector('button[type="button"]').textContent = "Fermer";
+      submit.textContent = "Synchronisation terminée";
     } catch (error) {
-      form.elements.password.value = "";
       status.textContent = error.message || "Synchronisation impossible.";
       submit.disabled = !etatInterface.rapports.length;
+    }
+  };
+}
+function dialogueConfigurationSynchronisation() {
+  if (!etatInterface.administrateur) return;
+  const modal = document.createElement("div");
+  modal.className = "fenetre-modale";
+  modal.innerHTML = `<section class="panneau"><h2>Configurer la synchronisation</h2><p>À faire une seule fois par poste. Windows chiffre les accès du portail ; les chefs de quart ne les verront pas et n’auront pas à les saisir.</p><form id="formulaireConfigurationSynchronisation"><label class="champ">Identifiant administrateur du portail<input name="username" required maxlength="100" autocomplete="username"></label><label class="champ">Mot de passe du portail<input name="password" type="password" required maxlength="128" autocomplete="current-password"></label><p class="discret" id="etatConfigurationSynchronisation"></p><div class="actions"><button type="submit">Enregistrer les accès chiffrés</button><button type="button" class="secondaire" onclick="this.closest('.fenetre-modale').remove()">Annuler</button></div></form></section>`;
+  document.body.append(modal);
+  const form = modal.querySelector("#formulaireConfigurationSynchronisation");
+  const status = modal.querySelector("#etatConfigurationSynchronisation");
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    const username = String(form.elements.username.value || "").trim();
+    const password = String(form.elements.password.value || "");
+    const submit = form.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    status.textContent = "Enregistrement sécurisé…";
+    try {
+      await rapportQuart.configurerIdentifiantsSynchronisation({ username, password });
+      form.reset();
+      status.textContent = "Accès enregistrés de manière chiffrée sur ce poste. Lancez une synchronisation pour vérifier la connexion.";
+      submit.textContent = "Accès enregistrés";
+    } catch (error) {
+      form.elements.password.value = "";
+      status.textContent = error.message || "Impossible d’enregistrer les accès.";
+      submit.disabled = false;
     }
   };
   form.elements.username.focus();

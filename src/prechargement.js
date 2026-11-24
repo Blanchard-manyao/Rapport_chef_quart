@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("rapportQuart", {
   capturerSynthese: (r) => ipcRenderer.invoke("capture-synthesis", r),
   ouvrirDossierCaptures: () => ipcRenderer.invoke("open-captures"),
   enregistrerRapport: (x) => ipcRenderer.invoke("save-report", x),
+  configurerIdentifiantsSynchronisation: (x) => ipcRenderer.invoke("configure-sync-credentials", x),
   synchroniserRapportsDistants: (x) => ipcRenderer.invoke("sync-reports", x),
   deconnecterUtilisateur: () => ipcRenderer.invoke("logout"),
   exporterClasseurExcel: (x) => ipcRenderer.invoke("export-xlsx", x),
