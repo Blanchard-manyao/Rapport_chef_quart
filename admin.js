@@ -55,8 +55,8 @@ function exporterRapports() {
 
 function exporterArrets(arrets) {
   exporterXlsx(`arrets_${suffixePeriode()}.xlsx`, "Arrêts",
-    ["Date", "Quart", "Équipe", "Zone", "Début", "Fin", "Cause", "Durée (minutes)"],
-    arrets.map((arret) => [arret.date, arret.quart, arret.equipe, arret.zone, arret.start, arret.end, arret.cause, arret.minutes]),
+    ["Date", "Quart", "Équipe", "Type", "Zone", "Équipement", "Début", "Fin", "Cause", "Durée (minutes)"],
+    arrets.map((arret) => [arret.date, arret.quart, arret.equipe, arret.impact === "equipment" ? "Panne équipement, zone en marche" : "Arrêt de zone", arret.zone, arret.equipment || "", arret.start, arret.end, arret.cause, arret.minutes]),
   );
 }
 
@@ -143,7 +143,7 @@ function afficherTableauDeBord() {
     const x2 = 50 + 50 * Math.cos(radiansFin), y2 = 50 + 50 * Math.sin(radiansFin);
     return `<path d="M50 50 L${x1} ${y1} A50 50 0 ${balayage > 180 ? 1 : 0} 1 ${x2} ${y2} Z" fill="${couleurs[index]}"/>`;
   }).join("") : '<circle cx="50" cy="50" r="50" fill="#dbe5ef"/>';
-  const zones = zonesArret.map((zone) => ({ nom: zone, minutes: somme(arrets.filter((arret) => arret.zone === zone).map((arret) => arret.minutes)) }));
+  const zones = zonesArret.map((zone) => ({ nom: zone, minutes: somme(arrets.filter((arret) => arret.zone === zone && arret.impact !== "equipment").map((arret) => arret.minutes)) }));
   const repartition = equipes.map((equipe, index) => {
     const part = totalEquipes ? (totauxEquipes[index] / totalEquipes * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) : "0";
     return `<div class="ligne-zone"><span><i class="point couleur-equipe-${equipe.toLowerCase()}"></i>Équipe ${equipe} · ${part} %</span><b>${formaterNombre(totauxEquipes[index])} colis</b></div>`;
@@ -170,10 +170,12 @@ function afficherTempsArret() {
   const arrets = filtrerRapports().flatMap((rapport) => arretsDuRapport(rapport).map((arret) => ({
     ...arret, date: rapport.date, quart: rapport.quart, equipe: rapport.equipe,
   }))).sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.quart).localeCompare(String(b.quart)) || String(a.equipe).localeCompare(String(b.equipe)));
-  const totaux = zonesArret.map((zone) => ({ zone, minutes: somme(arrets.filter((arret) => arret.zone === zone).map((arret) => arret.minutes)) }));
+  const totaux = zonesArret.map((zone) => ({ zone, minutes: somme(arrets.filter((arret) => arret.zone === zone && arret.impact !== "equipment").map((arret) => arret.minutes)) }));
   const cartes = totaux.map(({ zone, minutes }) => `<article class="carte-zone"><span>${echapper(zone)}</span><b>${duree(minutes)}</b></article>`).join("");
-  const lignes = arrets.map((arret) => `<tr><td>${formaterDate(arret.date)}</td><td>${echapper(arret.quart || "—")}</td><td>${echapper(arret.equipe || "—")}</td><td>${echapper(arret.zone || "—")}</td><td>${echapper(arret.start || "—")}–${echapper(arret.end || "—")}</td><td>${echapper(arret.cause || "—")}</td><td>${duree(arret.minutes)}</td></tr>`).join("");
-  elements.contenu.innerHTML = `<section class="panneau resume-arrets"><div class="entete-tableau"><h2>Temps d’arrêt par zone</h2><button class="bouton secondaire" id="exporterArrets" type="button">Exporter les arrêts Excel</button></div><div class="grille-zones">${cartes}</div></section><section class="panneau details-arrets"><h2>Détail par jour et quart — un arrêt distinct par ligne</h2><div class="tableau-defilement"><table><thead><tr><th>Jour</th><th>Quart</th><th>Équipe</th><th>Zone</th><th>Heures</th><th>Cause</th><th>Durée</th></tr></thead><tbody>${lignes || '<tr><td colspan="7">Aucun arrêt enregistré pour cette période.</td></tr>'}</tbody></table></div></section>`;
+  const totauxEquipements = Object.entries(arrets.reduce((totaux, arret) => { if (arret.impact !== "equipment") return totaux; const cle = `${arret.zone} — ${arret.equipment || "Équipement non précisé"}`; totaux[cle] = (totaux[cle] || 0) + arret.minutes; return totaux; }, {}));
+  const cartesEquipements = totauxEquipements.length ? totauxEquipements.map(([nom, minutes]) => `<article class="carte-zone"><span>${echapper(nom)} · panne sans arrêt de zone</span><b>${duree(minutes)}</b></article>`).join("") : '<p class="discret">Aucune panne d’équipement sans arrêt de zone pour cette période.</p>';
+  const lignes = arrets.map((arret) => `<tr><td>${formaterDate(arret.date)}</td><td>${echapper(arret.quart || "—")}</td><td>${echapper(arret.equipe || "—")}</td><td>${arret.impact === "equipment" ? "Panne équipement, zone en marche" : "Arrêt de zone"}</td><td>${echapper(arret.zone || "—")}</td><td>${echapper(arret.equipment || "—")}</td><td>${echapper(arret.start || "—")}–${echapper(arret.end || "—")}</td><td>${echapper(arret.cause || "—")}</td><td>${duree(arret.minutes)}</td></tr>`).join("");
+  elements.contenu.innerHTML = `<section class="panneau resume-arrets"><div class="entete-tableau"><h2>Temps d’arrêt des zones</h2><button class="bouton secondaire" id="exporterArrets" type="button">Exporter les arrêts Excel</button></div><div class="grille-zones">${cartes}</div></section><section class="panneau resume-arrets"><h2>Pannes d’équipement — zone en marche</h2><div class="grille-zones">${cartesEquipements}</div></section><section class="panneau details-arrets"><h2>Détail par jour et quart — un arrêt distinct par ligne</h2><div class="tableau-defilement"><table><thead><tr><th>Jour</th><th>Quart</th><th>Équipe</th><th>Type</th><th>Zone</th><th>Équipement</th><th>Heures</th><th>Cause</th><th>Durée</th></tr></thead><tbody>${lignes || '<tr><td colspan="9">Aucun arrêt enregistré pour cette période.</td></tr>'}</tbody></table></div></section>`;
   document.querySelector("#exporterArrets").onclick = () => exporterArrets(arrets);
 }
 

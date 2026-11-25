@@ -100,6 +100,9 @@ function dureeArret(stop, quart) {
   if (!intervalleArretValide(stop.start, stop.end, quart)) return 0;
   return (end - start + 1440) % 1440;
 }
+function estPanneEquipementSeule(stop) {
+  return stop?.impact === "equipment";
+}
 function formaterDuree(minutes) {
   const n = Math.max(0, Math.trunc(Number(minutes) || 0));
   return `${Math.floor(n / 60)} h ${String(n % 60).padStart(2, "0")} min`;
@@ -119,6 +122,17 @@ function calculerIndicateurs(r) {
     dry = Number(r.drying?.basketsDry || 0);
   const stops = r.stops || [];
   const stopTotals = {};
+  const equipmentStopTotals = {};
+  const ajouterArret = (stop, zone) => {
+    const minutes = dureeArret(stop, r.quart);
+    if (estPanneEquipementSeule(stop)) {
+      const equipment = String(stop.equipment || "Équipement non précisé").trim();
+      const key = `${zone} — ${equipment}`;
+      equipmentStopTotals[key] = (equipmentStopTotals[key] || 0) + minutes;
+    } else {
+      stopTotals[zone] = (stopTotals[zone] || 0) + minutes;
+    }
+  };
   const generatorRunTotals = {};
   Object.entries(r.generators || {}).forEach(([name, periods]) => {
     generatorRunTotals[name] = (periods || []).reduce(
@@ -128,12 +142,10 @@ function calculerIndicateurs(r) {
   });
   stops.forEach((s) => {
     const zone = s.zone || "Autre";
-    stopTotals[zone] = (stopTotals[zone] || 0) + dureeArret(s, r.quart);
+    ajouterArret(s, zone);
   });
   (r.drying?.sechoirs || []).forEach((d) => {
-    stopTotals[`Séchoir ${d.number}`] =
-      (stopTotals[`Séchoir ${d.number}`] || 0) +
-      (d.stops || []).reduce((a, s) => a + dureeArret(s, r.quart), 0);
+    (d.stops || []).forEach((stop) => ajouterArret(stop, `Séchoir ${d.number}`));
   });
   const kg = paniers * KG_PAR_COLIS;
   return {
@@ -146,10 +158,14 @@ function calculerIndicateurs(r) {
     averageBasket: dry ? ((paniers * 36) / dry) * 35 : null,
     averageBasketDiv28: dry ? (((paniers * 36) / dry) * 35) / 28 : null,
     stopTotals,
+    equipmentStopTotals,
+    totalEquipmentStops: Object.values(equipmentStopTotals).reduce((a, b) => a + b, 0),
     generatorRunTotals,
     totalStops: Object.values(stopTotals).reduce((a, b) => a + b, 0),
     sechoirs: (r.drying?.sechoirs || []).map((d) => {
-      const total = (d.stops || []).reduce((a, s) => a + dureeArret(s, r.quart), 0);
+      const total = (d.stops || [])
+        .filter((s) => !estPanneEquipementSeule(s))
+        .reduce((a, s) => a + dureeArret(s, r.quart), 0);
       return {
         ...d,
         stopMinutes: total,
@@ -190,6 +206,10 @@ function validerRapport(r) {
     ...(r.stops || []),
     ...(r.drying?.sechoirs || []).flatMap((d) => d.stops || []),
   ]) {
+    if (estPanneEquipementSeule(stop) && !String(stop.equipment || "").trim())
+      errors.push(`Précisez l’équipement en panne dans ${stop.zone || "la zone concernée"}.`);
+    if (estPanneEquipementSeule(stop) && (!stop.start || !stop.end))
+      errors.push(`Saisissez le début et la fin de la panne de l’équipement dans ${stop.zone || "la zone concernée"}.`);
     checkTimeRange(stop.start, stop.end, `l’arrêt ${stop.zone || ""}`);
   }
   Object.entries(r.generators || {}).forEach(([name, periods]) =>
@@ -251,6 +271,11 @@ function lignesSynthese(r) {
       value: asClock(d.stopTotals["Ligne 2"] || 0),
       tone: d.stopTotals["Ligne 2"] > 0 ? "danger" : "success",
     },
+    ...Object.entries(d.equipmentStopTotals).map(([name, minutes]) => ({
+      label: `Panne ${name} (zone en marche)`,
+      value: asClock(minutes),
+      tone: minutes > 0 ? "danger" : "success",
+    })),
     { label: "Avances Paniers", value: r.granulation?.basketAdvance || "" },
     {
       label: "Balles détectées durant le quart",
@@ -311,8 +336,20 @@ function texteRapport(r) {
       (sechoir.stops || []).map((stop) => ({ ...stop, zone: `Séchoir ${sechoir.number}` })),
     ),
   ];
-  if (stops.length) {
-    for (const stop of stops) {
+  const equipmentFailures = stops.filter(estPanneEquipementSeule);
+  const zoneStops = stops.filter((stop) => !estPanneEquipementSeule(stop));
+  lines.push("PANNES D’ÉQUIPEMENT (zone en fonctionnement)");
+  if (equipmentFailures.length) {
+    for (const stop of equipmentFailures) {
+      const cause = stop.cause || "cause non précisée";
+      lines.push(`- ${stop.zone} — ${stop.equipment} | ${stop.start} - ${stop.end} : ${cause} | ${hms(dureeArret(stop, r.quart))}`);
+    }
+  } else {
+    lines.push("Aucune");
+  }
+  lines.push("ARRÊTS DE ZONE");
+  if (zoneStops.length) {
+    for (const stop of zoneStops) {
       const cause = stop.cause || "cause non précisée";
       const zone = stop.equipment ? `${stop.zone} (${stop.equipment})` : stop.zone;
       lines.push(`- ${zone} | ${stop.start} - ${stop.end} : ${cause} | ${hms(dureeArret(stop, r.quart))}`);

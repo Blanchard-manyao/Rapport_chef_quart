@@ -350,7 +350,20 @@ tr:hover td {
   border-radius: 7px;
 }
 .ligne-arret {
-  grid-template-columns: minmax(105px, 1fr) minmax(90px, .8fr) minmax(90px, .8fr) minmax(130px, 1.3fr) minmax(125px, auto) auto;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-areas: "zone equipment impact impact" "debut fin cause delete" "duration duration duration duration";
+}
+.ligne-arret [data-arret="zone"] { grid-area: zone; }
+.ligne-arret [data-arret="equipment"] { grid-area: equipment; }
+.ligne-arret [data-arret="impact"] { grid-area: impact; min-width: 0; }
+.ligne-arret [data-arret="debut"] { grid-area: debut; }
+.ligne-arret [data-arret="fin"] { grid-area: fin; }
+.ligne-arret [data-arret="cause"] { grid-area: cause; }
+.ligne-arret [data-duree-arret] { grid-area: duration; }
+.ligne-arret .supprimer-arret { grid-area: delete; }
+.ligne-arret input,
+.ligne-arret select {
+  min-width: 0;
 }
 .duree-arret {
   color: #214a6d;
@@ -640,6 +653,7 @@ body {
 }
 .contenu:has(.cartes) > .cartes {
   margin: 0;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 .contenu:has(.cartes) > .resume-accueil,
 .contenu:has(.cartes) > .tendance-accueil {
@@ -1023,12 +1037,13 @@ body {
 }
 .section-rapport .champ select,
 .section-rapport .ligne-arret input,
+.section-rapport .ligne-arret select,
 .section-rapport .ligne-generateur input {
   min-height: 42px;
   font-size: 15px;
 }
 .section-rapport .ligne-arret {
-  grid-template-columns: minmax(0, .9fr) minmax(0, .8fr) minmax(0, .8fr) minmax(0, 1.2fr) minmax(0, 1fr) 32px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 .section-rapport .ligne-arret input {
   min-width: 0;
@@ -1136,6 +1151,7 @@ body {
   }
   .section-rapport .ligne-arret {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas: "zone equipment" "impact impact" "debut fin" "cause delete" "duration duration";
   }
   .section-rapport .ligne-generateur {
     grid-template-columns: repeat(2, minmax(0, 1fr));

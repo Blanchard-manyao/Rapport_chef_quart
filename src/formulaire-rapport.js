@@ -32,6 +32,11 @@
     const zone = zoneFixe;
     return `<div class="arret ligne-arret">
       <input data-arret="zone" aria-label="Zone de l’arrêt" value="${echapperTexteHtml(zone)}" readonly title="La zone est imposée par cette section">
+      <input data-arret="equipment" aria-label="Équipement concerné" placeholder="Équipement concerné" value="${echapperTexteHtml(arret.equipment || "")}">
+      <select data-arret="impact" aria-label="Impact de la panne">
+        <option value="zone" ${arret.impact === "equipment" ? "" : "selected"}>Arrêt de zone</option>
+        <option value="equipment" ${arret.impact === "equipment" ? "selected" : ""}>Panne équipement, zone en marche</option>
+      </select>
       <input data-arret="debut" aria-label="Heure de début de l’arrêt" placeholder="Début · 07H30" value="${echapperTexteHtml(reglesMetier.formaterHeure(arret.start) || arret.start || "")}">
       <input data-arret="fin" aria-label="Heure de fin de l’arrêt" placeholder="Fin · 08H15" value="${echapperTexteHtml(reglesMetier.formaterHeure(arret.end) || arret.end || "")}">
       <input data-arret="cause" aria-label="Cause de l’arrêt" placeholder="Cause de l’arrêt" value="${echapperTexteHtml(arret.cause || "")}" list="${identifiantSuggestion(zone)}">
@@ -45,7 +50,7 @@
       <h3>${title}</h3>
       <div class="liste-arrets">${items.map((item) => ligneArret(item, zone)).join("")}</div>
       <button class="secondaire ajouter-arret" type="button">Ajouter un arrêt</button>
-      <div class="resume-arrets" aria-live="polite">Temps d’arrêt : <output data-total-arrets>0 h 00 min</output><span>Temps de fonctionnement : <output data-fonctionnement-arrets>8 h 00 min</output></span></div>
+      <div class="resume-arrets" aria-live="polite">Temps d’arrêt de la zone : <output data-total-arrets>0 h 00 min</output><span>Temps de fonctionnement de la zone : <output data-fonctionnement-arrets>8 h 00 min</output></span></div>
     </section>`;
   }
 
@@ -344,12 +349,14 @@
           const startMinute = reglesMetier.lireHeureEnMinutes(debut),
             endMinute = reglesMetier.lireHeureEnMinutes(fin),
             complete = startMinute !== null && endMinute !== null,
-            valid = complete && reglesMetier.intervalleArretValide(debut, fin, current.quart);
+            valid = complete && reglesMetier.intervalleArretValide(debut, fin, current.quart),
+            impact = row.querySelector('[data-arret="impact"]').value,
+            equipment = row.querySelector('[data-arret="equipment"]').value.trim();
           const duration = valid ? reglesMetier.dureeArret({ start: debut, end: fin }, current.quart) : 0;
-          total += duration;
+          if (impact !== "equipment") total += duration;
           const durationLabel = row.querySelector("[data-duree-arret]");
           durationLabel.textContent = valid
-            ? `Durée : ${reglesMetier.formaterDuree(duration)}`
+            ? `${impact === "equipment" ? `Panne ${equipment || "équipement"}` : "Arrêt de zone"} : ${reglesMetier.formaterDuree(duration)}`
             : complete
               ? (endMinute < startMinute && current.quart !== "23h-07h"
                   ? "Seul le quart 23h-07h peut passer minuit"
@@ -446,7 +453,7 @@
         const stop = { zone: group.dataset.zoneGroupeArrets };
         row.querySelectorAll("[data-arret]").forEach((element) => {
           if (element.dataset.arret !== "zone") {
-            const cle = { debut: "start", fin: "end", cause: "cause" }[element.dataset.arret];
+            const cle = { debut: "start", fin: "end", cause: "cause", equipment: "equipment", impact: "impact" }[element.dataset.arret];
             stop[cle] = element.value.trim();
           }
         });
@@ -480,7 +487,7 @@
         const stop = { zone: `Séchoir ${index + 1}` };
         row.querySelectorAll("[data-arret]").forEach((element) => {
           if (element.dataset.arret !== "zone") {
-            const cle = { debut: "start", fin: "end", cause: "cause" }[element.dataset.arret];
+            const cle = { debut: "start", fin: "end", cause: "cause", equipment: "equipment", impact: "impact" }[element.dataset.arret];
             stop[cle] = element.value.trim();
           }
         });

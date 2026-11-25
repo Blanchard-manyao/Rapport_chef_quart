@@ -649,10 +649,12 @@ function lierBoutonsRapport(root = document) {
 function afficherAccueil(el) {
   const rs = rapportsPeriode(),
     st = tousLesArrets(rs),
+    arretsZone = st.filter((stop) => stop.impact !== "equipment"),
+    tempsPannesEquipement = calculerSomme(st.filter((stop) => stop.impact === "equipment").map((stop) => stop.minutes)),
     prod = calculerSomme(rs.map((r) => r.production?.paniers)),
     zones = reglesMetier.ZONES_ARRET.map((zone) => ({
       name: zone,
-      minutes: calculerSomme(st.filter((stop) => stop.zone === zone).map((stop) => stop.minutes)),
+      minutes: calculerSomme(arretsZone.filter((stop) => stop.zone === zone).map((stop) => stop.minutes)),
     })),
     colors = ["#2563eb", "#f59e0b", "#FF2C2C", "#16a34a"],
     equipes = Object.keys(reglesMetier.EQUIPES),
@@ -700,6 +702,7 @@ function afficherAccueil(el) {
   el.innerHTML = `${creationRapport}<div class="cartes">
     <div class="carte">Rapports enregistrés<b>${rs.length}</b></div>
     <div class="carte">Production de la période<b>${prod.toLocaleString("fr-FR")} colis</b></div>
+    <div class="carte">Pannes d’équipement sans arrêt de zone<b>${reglesMetier.formaterDuree(tempsPannesEquipement)}</b></div>
   </div>
   <div class="grille-deux resume-accueil">
     <section class="panneau zones-accueil">
@@ -821,7 +824,7 @@ function afficherArrets(id, target = "reportStops") {
     box.innerHTML = "<p>Aucun arrêt enregistré pour ce rapport.</p>";
     return;
   }
-  box.innerHTML = `<div class="conteneur-tableau"><table><thead><tr><th>Zone</th><th>Début</th><th>Fin</th><th>Cause</th><th>Durée</th></tr></thead><tbody>${stops.map((s) => `<tr><td>${echapperTexteHtml(s.zone)}</td><td>${echapperTexteHtml(reglesMetier.formaterHeure(s.start))}</td><td>${echapperTexteHtml(reglesMetier.formaterHeure(s.end))}</td><td>${echapperTexteHtml(s.cause)}</td><td>${reglesMetier.formaterDuree(s.minutes)}</td></tr>`).join("")}</tbody></table></div>`;
+  box.innerHTML = `<div class="conteneur-tableau"><table><thead><tr><th>Type</th><th>Zone</th><th>Équipement</th><th>Début</th><th>Fin</th><th>Cause</th><th>Durée</th></tr></thead><tbody>${stops.map((s) => `<tr><td>${s.impact === "equipment" ? "Panne équipement, zone en marche" : "Arrêt de zone"}</td><td>${echapperTexteHtml(s.zone)}</td><td>${echapperTexteHtml(s.equipment || "—")}</td><td>${echapperTexteHtml(reglesMetier.formaterHeure(s.start))}</td><td>${echapperTexteHtml(reglesMetier.formaterHeure(s.end))}</td><td>${echapperTexteHtml(s.cause)}</td><td>${reglesMetier.formaterDuree(s.minutes)}</td></tr>`).join("")}</tbody></table></div>`;
 }
 function afficherVueArrets(el) {
   const st = tousLesArrets().sort(
@@ -833,8 +836,14 @@ function afficherVueArrets(el) {
   );
   const zoneTotals = reglesMetier.ZONES_ARRET.map((zone) => ({
     name: zone,
-    minutes: calculerSomme(st.filter((stop) => stop.zone === zone).map((stop) => stop.minutes)),
+    minutes: calculerSomme(st.filter((stop) => stop.zone === zone && stop.impact !== "equipment").map((stop) => stop.minutes)),
   }));
+  const equipmentTotals = Object.entries(st.reduce((totals, stop) => {
+    if (stop.impact !== "equipment") return totals;
+    const key = `${stop.zone} — ${stop.equipment || "Équipement non précisé"}`;
+    totals[key] = (totals[key] || 0) + stop.minutes;
+    return totals;
+  }, {})).map(([name, minutes]) => ({ name, minutes }));
   const zoneCards = zoneTotals
     .map(
       ({ name, minutes }) =>
@@ -848,18 +857,23 @@ function afficherVueArrets(el) {
           !prev ||
           `${prev.date}|${prev.quart}|${prev.equipe}` !==
             `${s.date}|${s.quart}|${s.equipe}`;
-      return `<tr class="${startGroup ? "debut-groupe-arrets" : ""}"><td>${formaterDate(s.date)}</td><td>${echapperTexteHtml(s.quart)}</td><td>${echapperTexteHtml(s.equipe)}</td><td>${echapperTexteHtml(s.zone)}</td><td>${echapperTexteHtml(reglesMetier.formaterHeure(s.start))}–${echapperTexteHtml(reglesMetier.formaterHeure(s.end))}</td><td>${echapperTexteHtml(s.cause)}</td><td>${reglesMetier.formaterDuree(s.minutes)}</td></tr>`;
+      return `<tr class="${startGroup ? "debut-groupe-arrets" : ""}"><td>${formaterDate(s.date)}</td><td>${echapperTexteHtml(s.quart)}</td><td>${echapperTexteHtml(s.equipe)}</td><td>${echapperTexteHtml(s.impact === "equipment" ? "Panne équipement, zone en marche" : "Arrêt de zone")}</td><td>${echapperTexteHtml(s.zone)}</td><td>${echapperTexteHtml(s.equipment || "—")}</td><td>${echapperTexteHtml(reglesMetier.formaterHeure(s.start))}–${echapperTexteHtml(reglesMetier.formaterHeure(s.end))}</td><td>${echapperTexteHtml(s.cause)}</td><td>${reglesMetier.formaterDuree(s.minutes)}</td></tr>`;
     })
     .join("");
-  el.innerHTML = `<div class="actions"><button id="exporterArrets">Exporter les arrêts XLSX</button></div><section class="panneau resume-arrets"><h2>Temps d’arrêt par zone</h2><div class="grille-zones">${zoneCards}</div></section><section class="panneau details-arrets"><h2>Détail par jour et quart — un arrêt distinct par ligne</h2><div class="conteneur-tableau"><table><thead><tr><th>Jour</th><th>Quart</th><th>Équipe</th><th>Zone</th><th>Heures</th><th>Cause</th><th>Durée</th></tr></thead><tbody>${rows || '<tr><td colspan="7">Aucun arrêt enregistré pour cette période.</td></tr>'}</tbody></table></div></section>`;
+  const equipmentCards = equipmentTotals.length
+    ? equipmentTotals.map(({ name, minutes }) => `<article class="carte-zone"><span>${echapperTexteHtml(name)} · panne sans arrêt de zone</span><b>${reglesMetier.formaterDuree(minutes)}</b></article>`).join("")
+    : '<p class="discret">Aucune panne d’équipement sans arrêt de zone pour cette période.</p>';
+  el.innerHTML = `<div class="actions"><button id="exporterArrets">Exporter les arrêts XLSX</button></div><section class="panneau resume-arrets"><h2>Temps d’arrêt des zones</h2><div class="grille-zones">${zoneCards}</div></section><section class="panneau resume-arrets"><h2>Pannes d’équipement — zone en marche</h2><div class="grille-zones">${equipmentCards}</div></section><section class="panneau details-arrets"><h2>Détail par jour et quart — un arrêt distinct par ligne</h2><div class="conteneur-tableau"><table><thead><tr><th>Jour</th><th>Quart</th><th>Équipe</th><th>Type</th><th>Zone</th><th>Équipement</th><th>Heures</th><th>Cause</th><th>Durée</th></tr></thead><tbody>${rows || '<tr><td colspan="9">Aucun arrêt enregistré pour cette période.</td></tr>'}</tbody></table></div></section>`;
   selectionner("#exporterArrets").onclick = async () => {
     const rows = [
-      ["Jour", "Quart", "Équipe", "Zone", "Début", "Fin", "Cause", "Durée"],
+      ["Jour", "Quart", "Équipe", "Type", "Zone", "Équipement", "Début", "Fin", "Cause", "Durée"],
       ...st.map((s) => [
         formaterDate(s.date),
         s.quart,
         s.equipe,
+        s.impact === "equipment" ? "Panne équipement, zone en marche" : "Arrêt de zone",
         s.zone,
+        s.equipment || "",
         reglesMetier.formaterHeure(s.start),
         reglesMetier.formaterHeure(s.end),
         s.cause,
