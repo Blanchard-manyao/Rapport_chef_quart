@@ -14,9 +14,7 @@ const ZONES_ARRET = Object.freeze([
   "Conditionnement",
   "Ligne 1",
   "Ligne 2",
-  "Séchoir 1",
-  "Séchoir 2",
-  "Séchoir 3",
+  "Séchage",
   "Autre",
 ]);
 const KG_PAR_COLIS = 1260;
@@ -36,7 +34,7 @@ function creerRapportVide() {
       conge: 0,
       accidents: 0,
     },
-    prelavage: { box: "", buckets: 0, secondBox: "", secondBuckets: 0 },
+    prelavage: { box: "", buckets: 0, secondBox: "", secondBuckets: 0, tourBennes: 0 },
     granulation: {
       box: "",
       acidTitre: 1,
@@ -145,7 +143,9 @@ function calculerIndicateurs(r) {
     ajouterArret(s, zone);
   });
   (r.drying?.sechoirs || []).forEach((d) => {
-    (d.stops || []).forEach((stop) => ajouterArret(stop, `Séchoir ${d.number}`));
+    (d.stops || []).forEach((stop) =>
+      ajouterArret({ ...stop, equipment: stop.equipment || `Séchoir ${d.number}` }, "Séchage"),
+    );
   });
   const kg = paniers * KG_PAR_COLIS;
   return {
@@ -241,6 +241,7 @@ function lignesSynthese(r) {
   return [
     { label: "Nbre de Paniers", value: Number(r.drying?.basketsDry || 0) },
     { label: "Nbre de Colis", value: Number(r.production?.paniers || 0) },
+    { label: "Tour de bennes (prélavage)", value: Number(r.prelavage?.tourBennes || 0) },
     ...sechoirs.map((sechoir) => ({
       label: `Cycle du séchoir n°${sechoir.number} (secondes)`,
       value: sechoir.cycle || 0,
@@ -309,6 +310,7 @@ function texteRapport(r) {
     `Box en cours d'usinage : ${display(r.granulation?.box)}`,
     `Paniers granulés : ${r.granulation?.baskets || 0} | Titre d'acide : ${r.granulation?.acidTitre ?? 0} g/l | Conso acide : ${r.granulation?.acidConsumption || 0} kg`,
     `Box prélavé : (${display(r.prelavage?.box)}) | ${r.prelavage?.buckets || 0} godets | total prélavé ${((Number(r.prelavage?.buckets) || 0) * KG_PAR_GODET).toLocaleString("fr-FR")} kg`,
+    `Tour de bennes : ${r.prelavage?.tourBennes || 0}`,
   ];
   if (Number(r.prelavage?.secondBuckets) > 0 || String(r.prelavage?.secondBox || "").trim())
     lines.push(`Deuxième box prélavé : (${display(r.prelavage?.secondBox)}) | ${r.prelavage?.secondBuckets || 0} godets | total prélavé ${((Number(r.prelavage?.secondBuckets) || 0) * KG_PAR_GODET).toLocaleString("fr-FR")} kg`);
@@ -333,7 +335,11 @@ function texteRapport(r) {
   const stops = [
     ...(r.stops || []),
     ...(r.drying?.sechoirs || []).flatMap((sechoir) =>
-      (sechoir.stops || []).map((stop) => ({ ...stop, zone: `Séchoir ${sechoir.number}` })),
+      (sechoir.stops || []).map((stop) => ({
+        ...stop,
+        zone: "Séchage",
+        equipment: stop.equipment || `Séchoir ${sechoir.number}`,
+      })),
     ),
   ];
   const equipmentFailures = stops.filter(estPanneEquipementSeule);

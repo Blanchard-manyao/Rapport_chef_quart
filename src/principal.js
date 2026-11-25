@@ -233,7 +233,7 @@ function ecrireEtatBase() {
       );
     for (const [username, attempt] of Object.entries(donnees.loginAttempts || {}))
       baseSqlite.query("INSERT INTO login_attempts (username, attempts, locked_until) VALUES (?, ?, ?)", [username, Number(attempt.count) || 0, Number(attempt.until) || 0]);
-    for (const setting of ["recoveryKey", "recoveryAcknowledged", "legacyConnected", "syncPendingScopes"])
+    for (const setting of ["recoveryKey", "recoveryAcknowledged", "legacyConnected", "syncPendingScopes", "causesArret"])
       if (donnees[setting] !== undefined)
         baseSqlite.query("INSERT INTO app_settings (setting, value_json) VALUES (?, ?)", [setting, JSON.stringify(donnees[setting])]);
     baseSqlite.exec("COMMIT");
@@ -304,6 +304,8 @@ async function chargerBase() {
   donnees.reports = (donnees.reports || []).map(normaliserRapport);
   donnees.loginAttempts ||= {};
   donnees.syncPendingScopes = Array.isArray(donnees.syncPendingScopes) ? donnees.syncPendingScopes : [];
+  donnees.causesArret = donnees.causesArret && typeof donnees.causesArret === "object" ? donnees.causesArret : {};
+  const causesImportees = fusionnerCausesRapports(donnees.reports);
   if (!donnees.recoveryKey) {
     donnees.recoveryKey = cryptographie.randomBytes(20).toString("hex").toUpperCase();
     donnees.recoveryAcknowledged = false;
@@ -311,6 +313,7 @@ async function chargerBase() {
   if (
     schemaModifie ||
     !databaseExisted ||
+    causesImportees ||
     !baseSqlite.query("SELECT 1 FROM app_settings WHERE setting = 'recoveryKey'").length
   )
     ecrireEtatBase();
@@ -318,6 +321,33 @@ async function chargerBase() {
 function sauvegarderBase() {
   fichiers.mkdirSync(applicationElectron.getPath("userData"), { recursive: true });
   ecrireEtatBase();
+}
+function fusionnerCausesRapports(rapports = []) {
+  donnees.causesArret ||= {};
+  let changed = false;
+  const stops = (rapport) => [
+    ...(rapport.stops || []).map((stop) => {
+      const legacyDryer = String(stop.zone || "").match(/^Séchoir ([123])$/i);
+      return legacyDryer
+        ? { ...stop, zone: "Séchage", equipment: stop.equipment || `Séchoir ${legacyDryer[1]}` }
+        : stop;
+    }),
+    ...(rapport.drying?.sechoirs || []).flatMap((sechoir) =>
+      (sechoir.stops || []).map((stop) => ({ ...stop, zone: "Séchage" })),
+    ),
+  ];
+  for (const rapport of rapports) {
+    for (const stop of stops(rapport)) {
+      const cause = String(stop.cause || "").trim(), zone = String(stop.zone || "Autre").trim();
+      if (!cause) continue;
+      const causes = donnees.causesArret[zone] ||= [];
+      if (!causes.some((saved) => String(saved).toLocaleLowerCase("fr-FR") === cause.toLocaleLowerCase("fr-FR"))) {
+        causes.push(cause);
+        changed = true;
+      }
+    }
+  }
+  return changed;
 }
 function ajouterSynchronisationEnAttente(scope) {
   donnees.syncPendingScopes ||= [];
@@ -468,6 +498,7 @@ ipcMain.handle("bootstrap", () => {
       D: "TIA LOU EDWIGE",
     },
     reports: logged ? donnees.reports : [],
+    stopCauses: logged ? donnees.causesArret || {} : {},
     adminSet: !!donnees.users.Administrateur,
     recoveryKey: donnees.recoveryAcknowledged ? null : donnees.recoveryKey,
     recoveryKeyForSetup: donnees.users.Administrateur ? null : donnees.recoveryKey,
@@ -1019,6 +1050,7 @@ ipcMain.handle("save-report", (_, report) => {
   }
   report.createdAt = old?.createdAt || new Date().toISOString();
   report.updatedAt = new Date().toISOString();
+  fusionnerCausesRapports([report]);
   if (old) donnees.reports.splice(oldIndex, 1);
   donnees.reports.push(report);
   sauvegarderBase();

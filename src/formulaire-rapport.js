@@ -37,8 +37,8 @@
         <option value="zone" ${arret.impact === "equipment" ? "" : "selected"}>Arrêt de zone</option>
         <option value="equipment" ${arret.impact === "equipment" ? "selected" : ""}>Panne équipement, zone en marche</option>
       </select>
-      <input data-arret="debut" aria-label="Heure de début de l’arrêt" placeholder="Début · 07H30" value="${echapperTexteHtml(reglesMetier.formaterHeure(arret.start) || arret.start || "")}">
-      <input data-arret="fin" aria-label="Heure de fin de l’arrêt" placeholder="Fin · 08H15" value="${echapperTexteHtml(reglesMetier.formaterHeure(arret.end) || arret.end || "")}">
+      <input data-arret="debut" aria-label="Heure de début de l’arrêt" placeholder="Début · 07H30" maxlength="5" value="${echapperTexteHtml(reglesMetier.formaterHeure(arret.start) || arret.start || "")}">
+      <input data-arret="fin" aria-label="Heure de fin de l’arrêt" placeholder="Fin · 08H15" maxlength="5" value="${echapperTexteHtml(reglesMetier.formaterHeure(arret.end) || arret.end || "")}">
       <input data-arret="cause" aria-label="Cause de l’arrêt" placeholder="Cause de l’arrêt" value="${echapperTexteHtml(arret.cause || "")}" list="${identifiantSuggestion(zone)}">
       <output class="duree-arret" data-duree-arret>Durée : —</output>
       <button type="button" class="alerte supprimer-arret" aria-label="Supprimer cet arrêt">×</button>
@@ -66,8 +66,8 @@
 
   function ligneGenerateur(periode = {}) {
     return `<div class="ligne-generateur">
-      <input data-heure-generateur="debut" aria-label="Heure de démarrage du générateur" placeholder="Démarrage · 07H30" value="${echapperTexteHtml(reglesMetier.formaterHeure(periode.start) || periode.start || "")}">
-      <input data-heure-generateur="fin" aria-label="Heure d’arrêt du générateur" placeholder="Arrêt · 15H00" value="${echapperTexteHtml(reglesMetier.formaterHeure(periode.end) || periode.end || "")}">
+      <input data-heure-generateur="debut" aria-label="Heure de démarrage du générateur" placeholder="Démarrage · 07H30" maxlength="5" value="${echapperTexteHtml(reglesMetier.formaterHeure(periode.start) || periode.start || "")}">
+      <input data-heure-generateur="fin" aria-label="Heure d’arrêt du générateur" placeholder="Arrêt · 15H00" maxlength="5" value="${echapperTexteHtml(reglesMetier.formaterHeure(periode.end) || periode.end || "")}">
       <output class="duree-generateur" data-duree-generateur>Fonctionnement : —</output>
       <button type="button" class="alerte supprimer-generateur" aria-label="Supprimer cette période">×</button>
     </div>`;
@@ -76,6 +76,7 @@
   function afficherFormulaire(rapportExistant, enregistrer) {
     const rapport = rapportExistant ? structuredClone(rapportExistant) : reglesMetier.creerRapportVide();
     rapport.prelavage ||= { box: "", buckets: 0, secondBox: "", secondBuckets: 0 };
+    rapport.prelavage.tourBennes ||= 0;
     rapport.stops ||= [];
     if (!rapportExistant && window.utilisateurActif && window.utilisateurActif !== "Administrateur") {
       rapport.equipe = window.utilisateurActif;
@@ -113,6 +114,7 @@
           <div class="grille-formulaire">
             ${creerChamp("Box prélavé", "prelavage.box", rapport.prelavage.box)}
             ${creerChampNombre("Nombre de godets", "prelavage.buckets", rapport.prelavage.buckets)}
+            ${creerChampNombre("Tour de bennes", "prelavage.tourBennes", rapport.prelavage.tourBennes || 0)}
           </div>
           <div class="champs-deuxieme-box ${hasSecondBox ? "" : "masque"}">
             <div class="grille-formulaire">
@@ -162,7 +164,7 @@
           ${creerChamp("Compteur du séchoir", "sechoir.counter", sechoir.counter)}
           ${creerChamp("Compteur gaz E1", "sechoir.gas1", sechoir.gas1)}
           ${creerChamp("Compteur gaz E2", "sechoir.gas2", sechoir.gas2)}
-        </div>${groupeArrets(`Arrêt séchoir ${index + 1}`, `Séchoir ${index + 1}`, sechoir.stops || [])}</section>`,
+        </div>${groupeArrets(`Arrêt séchoir ${index + 1}`, "Séchage", (sechoir.stops || []).map((stop) => ({ ...stop, equipment: stop.equipment || `Séchoir ${index + 1}` })))}</section>`,
       })),
       {
         id: "conditionnement",
@@ -392,7 +394,23 @@
       modal.querySelector("#texteRapportCopier").value = reglesMetier.texteRapport(current);
     }
 
-    form.addEventListener("input", actualiserApercu);
+    form.addEventListener("keydown", (event) => {
+      const field = event.target;
+      if (field.matches('input[type="number"]') && (/^[eE+-]$/.test(event.key) || (field.step === "1" && /^[.,]$/.test(event.key))))
+        event.preventDefault();
+    });
+    form.addEventListener("input", (event) => {
+      const field = event.target;
+      if (field.matches('input[type="number"]') && field.value) {
+        const normalized = field.value.replace(",", ".").replace(/[^0-9.]/g, "");
+        const [whole, ...fraction] = normalized.split(".");
+        const clean = whole + (fraction.length ? `.${fraction.join("")}` : "");
+        if (clean !== field.value) field.value = clean;
+      }
+      if (field.matches('[data-arret="debut"], [data-arret="fin"], [data-heure-generateur]'))
+        field.value = field.value.slice(0, 5);
+      actualiserApercu();
+    });
     actualiserApercu();
     modal.querySelector("#copierRapport").onclick = async () => {
       const text = modal.querySelector("#texteRapportCopier").value;

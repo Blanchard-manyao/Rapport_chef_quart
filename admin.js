@@ -1,6 +1,6 @@
 "use strict";
 
-const zonesArret = ["Prélavage", "Conditionnement", "Ligne 1", "Ligne 2", "Séchoir 1", "Séchoir 2", "Séchoir 3", "Autre"];
+const zonesArret = ["Prélavage", "Conditionnement", "Ligne 1", "Ligne 2", "Séchage", "Autre"];
 const equipes = ["A", "B", "C", "D"];
 const couleurs = ["#2563eb", "#f59e0b", "#ff2c2c", "#16a34a"];
 const etat = { rapports: [], debut: "", fin: "", mois: new Date().toISOString().slice(0, 7), jour: "", onglet: "home" };
@@ -71,8 +71,13 @@ function filtrerRapports() {
 
 function arretsDuRapport(rapport) {
   const arrets = [
-    ...(rapport.stops || []),
-    ...(rapport.drying?.sechoirs || []).flatMap((sechoir) => (sechoir.stops || []).map((arret) => ({ ...arret, zone: `Séchoir ${sechoir.number}` }))),
+    ...(rapport.stops || []).map((arret) => {
+      const ancienSechoir = String(arret.zone || "").match(/^Séchoir ([123])$/i);
+      return ancienSechoir
+        ? { ...arret, zone: "Séchage", equipment: arret.equipment || `Séchoir ${ancienSechoir[1]}` }
+        : arret;
+    }),
+    ...(rapport.drying?.sechoirs || []).flatMap((sechoir) => (sechoir.stops || []).map((arret) => ({ ...arret, zone: "Séchage", equipment: arret.equipment || `Séchoir ${sechoir.number}` }))),
   ];
   return arrets.map((arret) => {
     const heure = (valeur) => {
