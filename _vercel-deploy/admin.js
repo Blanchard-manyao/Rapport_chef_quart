@@ -138,15 +138,22 @@ function afficherTableauDeBord() {
   const totauxEquipes = equipes.map((equipe) => somme(rapports.filter((rapport) => rapport.equipe === equipe).map((rapport) => rapport.production?.paniers)));
   const totalEquipes = somme(totauxEquipes);
   let angle = 0;
+  const etiquettesSecteurs = [];
   const secteurs = totalEquipes ? totauxEquipes.map((total, index) => {
     if (!total) return "";
     const debut = angle, balayage = total / totalEquipes * 360;
     angle += balayage;
-    if (balayage >= 359.999) return `<circle cx="50" cy="50" r="50" fill="${couleurs[index]}"/>`;
+    if (balayage >= 359.999) {
+      etiquettesSecteurs.push(`<text class="etiquette-equipe-camembert" x="50" y="54">${equipes[index]}</text>`);
+      return `<circle cx="50" cy="50" r="50" fill="${couleurs[index]}"><title>Équipe ${equipes[index]} · ${formaterNombre(total)} colis</title></circle>`;
+    }
     const radiansDebut = (debut - 90) * Math.PI / 180, radiansFin = (angle - 90) * Math.PI / 180;
     const x1 = 50 + 50 * Math.cos(radiansDebut), y1 = 50 + 50 * Math.sin(radiansDebut);
     const x2 = 50 + 50 * Math.cos(radiansFin), y2 = 50 + 50 * Math.sin(radiansFin);
-    return `<path d="M50 50 L${x1} ${y1} A50 50 0 ${balayage > 180 ? 1 : 0} 1 ${x2} ${y2} Z" fill="${couleurs[index]}"/>`;
+    const milieu = (debut + balayage / 2 - 90) * Math.PI / 180;
+    const xEtiquette = 50 + 31 * Math.cos(milieu), yEtiquette = 50 + 31 * Math.sin(milieu) + 3;
+    etiquettesSecteurs.push(`<text class="etiquette-equipe-camembert" x="${xEtiquette}" y="${yEtiquette}">${equipes[index]}</text>`);
+    return `<path d="M50 50 L${x1} ${y1} A50 50 0 ${balayage > 180 ? 1 : 0} 1 ${x2} ${y2} Z" fill="${couleurs[index]}"><title>Équipe ${equipes[index]} · ${formaterNombre(total)} colis</title></path>`;
   }).join("") : '<circle cx="50" cy="50" r="50" fill="#dbe5ef"/>';
   const zones = zonesArret.map((zone) => ({ nom: zone, minutes: somme(arrets.filter((arret) => arret.zone === zone && arret.impact !== "equipment").map((arret) => arret.minutes)) }));
   const repartition = equipes.map((equipe, index) => {
@@ -156,7 +163,7 @@ function afficherTableauDeBord() {
 
   elements.contenu.innerHTML = `<div class="cartes"><div class="carte">Rapports enregistrés<b>${formaterNombre(rapports.length)}</b></div><div class="carte">Production de la période<b>${formaterNombre(production)} colis</b></div></div>
     <div class="grille-deux resume-accueil"><section class="panneau zones-accueil"><h2>Temps d’arrêt par zone</h2><div class="grille-zones">${zones.map(({ nom, minutes }) => `<article class="carte-zone"><span>${echapper(nom)}</span><b>${duree(minutes)}</b></article>`).join("")}</div></section>
-    <section class="panneau repartition-accueil"><h2>Répartition de la production par équipe</h2><div class="disposition-camembert"><svg class="camembert" viewBox="0 0 100 100" role="img" aria-label="Répartition de la production entre les équipes">${secteurs}</svg><div>${repartition}</div></div></section></div>
+    <section class="panneau repartition-accueil"><h2>Répartition de la production par équipe</h2><div class="disposition-camembert"><svg class="camembert" viewBox="0 0 100 100" role="img" aria-label="Répartition de la production entre les équipes">${secteurs}${etiquettesSecteurs.join("")}</svg><div>${repartition}</div></div></section></div>
     <section class="panneau tendance-accueil"><h2>Évolution de la production par équipe — ${modeGraphique === "month" ? "par mois" : "par jour"}</h2>${courbeProduction(rapports, modeGraphique)}</section>`;
 }
 

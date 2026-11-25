@@ -38,6 +38,7 @@ input:focus, select:focus { outline: 3px solid #2a7eb333; border-color: #2871a9;
 .carte-zone b { font-size: 16px; }
 .disposition-camembert { display: grid; grid-template-columns: minmax(110px, 145px) 1fr; gap: 18px; align-items: center; }
 .camembert { display: block; width: min(145px, 100%); aspect-ratio: 1; }
+.etiquette-equipe-camembert { fill: #fff; font-size: 10px; font-weight: 700; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: #17324d; stroke-width: 2px; stroke-linejoin: round; }
 .ligne-zone { display: flex; justify-content: space-between; gap: 8px; padding: 9px 0; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
 .ligne-zone b { white-space: nowrap; }
 .point, .legende i { display: inline-block; width: 11px; height: 11px; margin-right: 5px; border-radius: 50%; }
