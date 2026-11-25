@@ -85,11 +85,19 @@ function formaterHeure(value) {
   if (n === null) return "";
   return `${String(Math.floor(n / 60)).padStart(2, "0")}H${String(n % 60).padStart(2, "0")}`;
 }
-// dureeArret : calcule la durée entre deux heures déjà validées.
-function dureeArret(stop) {
+// intervalleArretValide : autorise le passage à minuit uniquement au quart de nuit.
+function intervalleArretValide(startValue, endValue, quart) {
+  const start = lireHeureEnMinutes(startValue),
+    end = lireHeureEnMinutes(endValue);
+  if (start === null || end === null || start === end) return false;
+  if (end < start && quart !== QUARTS[2]) return false;
+  return (end - start + 1440) % 1440 <= MINUTES_PAR_QUART;
+}
+// dureeArret : calcule la durée et prend en charge le passage à minuit du quart de nuit.
+function dureeArret(stop, quart) {
   const start = lireHeureEnMinutes(stop.start),
     end = lireHeureEnMinutes(stop.end);
-  if (start === null || end === null) return 0;
+  if (!intervalleArretValide(stop.start, stop.end, quart)) return 0;
   return (end - start + 1440) % 1440;
 }
 function formaterDuree(minutes) {
@@ -114,18 +122,18 @@ function calculerIndicateurs(r) {
   const generatorRunTotals = {};
   Object.entries(r.generators || {}).forEach(([name, periods]) => {
     generatorRunTotals[name] = (periods || []).reduce(
-      (n, x) => n + dureeArret(x),
+      (n, x) => n + dureeArret(x, r.quart),
       0,
     );
   });
   stops.forEach((s) => {
     const zone = s.zone || "Autre";
-    stopTotals[zone] = (stopTotals[zone] || 0) + dureeArret(s);
+    stopTotals[zone] = (stopTotals[zone] || 0) + dureeArret(s, r.quart);
   });
   (r.drying?.sechoirs || []).forEach((d) => {
     stopTotals[`Séchoir ${d.number}`] =
       (stopTotals[`Séchoir ${d.number}`] || 0) +
-      (d.stops || []).reduce((a, s) => a + dureeArret(s), 0);
+      (d.stops || []).reduce((a, s) => a + dureeArret(s, r.quart), 0);
   });
   const kg = paniers * KG_PAR_COLIS;
   return {
@@ -141,7 +149,7 @@ function calculerIndicateurs(r) {
     generatorRunTotals,
     totalStops: Object.values(stopTotals).reduce((a, b) => a + b, 0),
     sechoirs: (r.drying?.sechoirs || []).map((d) => {
-      const total = (d.stops || []).reduce((a, s) => a + dureeArret(s), 0);
+      const total = (d.stops || []).reduce((a, s) => a + dureeArret(s, r.quart), 0);
       return {
         ...d,
         stopMinutes: total,
@@ -172,8 +180,10 @@ function validerRapport(r) {
       end = lireHeureEnMinutes(endValue);
     if (start === null || end === null) {
       errors.push(`Heure invalide pour ${label}. Saisissez une heure comme 07H30.`);
-    } else if (end <= start) {
-      errors.push(`L’heure de fin doit être supérieure à l’heure de début pour ${label}.`);
+    } else if (start === end || (end < start && r.quart !== QUARTS[2])) {
+      errors.push(`La fin de ${label} doit suivre le début. Seul le quart 23h-07h peut passer minuit.`);
+    } else if (!intervalleArretValide(startValue, endValue, r.quart)) {
+      errors.push(`La durée de ${label} ne peut pas dépasser 8 heures.`);
     }
   };
   for (const stop of [
@@ -305,7 +315,7 @@ function texteRapport(r) {
     for (const stop of stops) {
       const cause = stop.cause || "cause non précisée";
       const zone = stop.equipment ? `${stop.zone} (${stop.equipment})` : stop.zone;
-      lines.push(`- ${zone} | ${stop.start} - ${stop.end} : ${cause} | ${hms(dureeArret(stop))}`);
+      lines.push(`- ${zone} | ${stop.start} - ${stop.end} : ${cause} | ${hms(dureeArret(stop, r.quart))}`);
     }
   } else {
     lines.push("Aucun");
@@ -335,6 +345,7 @@ window.ReglesMetier = Object.freeze({
   creerRapportVide,
   lireHeureEnMinutes,
   formaterHeure,
+  intervalleArretValide,
   dureeArret,
   formaterDuree,
   effectifPresent,

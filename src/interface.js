@@ -177,7 +177,7 @@ function afficherConnexion(refocaliserApresConnexion = false) {
     }
     etatInterface.utilisateur = res.user;
     etatInterface.administrateur = res.user === "Administrateur";
-    etatInterface.onglet = etatInterface.administrateur ? "home" : "create";
+    etatInterface.onglet = "home";
     window.utilisateurActif = etatInterface.utilisateur;
     try {
       if (!(await rechargerDonnees(sessionVersion))) return;
@@ -258,13 +258,9 @@ function dialogueReinitialisationMotDePasse(user) {
 }
 function afficherStructureApplication() {
   const rangeActive = Boolean(etatInterface.debutPeriode || etatInterface.finPeriode);
-  const tabs = [
-    ["home", "Tableau de bord"],
-    ...(!etatInterface.administrateur ? [["create", "Créer un rapport"]] : []),
-    ["reports", "Rapports enregistrés"],
-    ...(!etatInterface.administrateur ? [["history", "Historique"]] : []),
-    ["stops", "Temps d’arrêt par zone"],
-  ];
+  const tabs = etatInterface.administrateur
+    ? [["home", "Tableau de bord"], ["reports", "Rapports enregistrés"], ["stops", "Temps d’arrêt par zone"]]
+    : [["home", "Tableau de bord"], ["history", "Historique et rapports"], ["stops", "Temps d’arrêt par zone"]];
   const [year, month] = etatInterface.mois.split("-").map(Number),
     count = Number.isFinite(year) && month ? new Date(year, month, 0).getDate() : 31,
     showFilters = Boolean(etatInterface.utilisateur);
@@ -272,7 +268,7 @@ function afficherStructureApplication() {
     home: "Tableau de bord",
     create: "Créer un rapport",
     reports: "Rapports enregistrés",
-    history: "Historique",
+    history: "Historique et rapports",
     stops: "Temps d’arrêt par zone",
   };
   const equipeActions = etatInterface.administrateur
@@ -362,6 +358,8 @@ function afficherEcran() {
       stops: afficherVueArrets,
     })[etatInterface.onglet] || afficherCreation
   )(view);
+  if (selectionner("#demarrerRapport"))
+    selectionner("#demarrerRapport").onclick = () => creerRapport();
   if (etatInterface.identifiantRapportArretsSelectionne && etatInterface.cibleArretsSelectionnee) {
     const target = selectionner(`#${etatInterface.cibleArretsSelectionnee}`);
     if (target) afficherArrets(etatInterface.identifiantRapportArretsSelectionne, etatInterface.cibleArretsSelectionnee);
@@ -510,7 +508,7 @@ function arretsDuRapport(r) {
     ),
   ].map((s) => ({
     ...s,
-    minutes: reglesMetier.dureeArret(s),
+    minutes: reglesMetier.dureeArret(s, r.quart),
     date: r.date,
     quart: r.quart,
     equipe: r.equipe,
@@ -696,7 +694,10 @@ function afficherAccueil(el) {
     chartMode = chartMonths.size > 1 ? "month" : "day",
     chartTitle = chartMode === "month" ? "par mois" : "par jour";
 
-  el.innerHTML = `<div class="cartes">
+  const creationRapport = !etatInterface.administrateur
+    ? '<section class="panneau creation-accueil"><h2>Nouveau rapport de quart</h2><p class="discret">Créez le rapport de votre équipe. Retrouvez ensuite vos rapports dans « Historique et rapports ».</p><button id="demarrerRapport">Créer un nouveau rapport</button></section>'
+    : "";
+  el.innerHTML = `${creationRapport}<div class="cartes">
     <div class="carte">Rapports enregistrés<b>${rs.length}</b></div>
     <div class="carte">Production de la période<b>${prod.toLocaleString("fr-FR")} colis</b></div>
   </div>
@@ -745,7 +746,7 @@ function afficherRapports(el) {
   if (etatInterface.administrateur) selectionner("#exporterRapports").onclick = () => exporterRapports(rs);
 }
 function afficherHistorique(el) {
-  el.innerHTML = `<section class="panneau"><h2>Historique</h2><div class="actions"><label>Date <input type="date" id="filtreDate"></label><label>Quart <select id="filtreQuart"><option value="">Tous</option>${reglesMetier.QUARTS.map((x) => `<option>${x}</option>`).join("")}</select></label><label>Équipe <select id="filtreEquipe"><option value="">Toutes</option>${Object.keys(
+  el.innerHTML = `<section class="panneau"><h2>Historique et rapports enregistrés</h2><div class="actions"><label>Date <input type="date" id="filtreDate"></label><label>Quart <select id="filtreQuart"><option value="">Tous</option>${reglesMetier.QUARTS.map((x) => `<option>${x}</option>`).join("")}</select></label><label>Équipe <select id="filtreEquipe"><option value="">Toutes</option>${Object.keys(
     reglesMetier.EQUIPES,
   )
     .map((x) => `<option value="${x}">${x}</option>`)

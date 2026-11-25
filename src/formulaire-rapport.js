@@ -344,14 +344,16 @@
           const startMinute = reglesMetier.lireHeureEnMinutes(debut),
             endMinute = reglesMetier.lireHeureEnMinutes(fin),
             complete = startMinute !== null && endMinute !== null,
-            valid = complete && endMinute > startMinute;
-          const duration = valid ? reglesMetier.dureeArret({ start: debut, end: fin }) : 0;
+            valid = complete && reglesMetier.intervalleArretValide(debut, fin, current.quart);
+          const duration = valid ? reglesMetier.dureeArret({ start: debut, end: fin }, current.quart) : 0;
           total += duration;
           const durationLabel = row.querySelector("[data-duree-arret]");
           durationLabel.textContent = valid
             ? `Durée : ${reglesMetier.formaterDuree(duration)}`
             : complete
-              ? "Fin après le début requise"
+              ? (endMinute < startMinute && current.quart !== "23h-07h"
+                  ? "Seul le quart 23h-07h peut passer minuit"
+                  : "Durée invalide (maximum 8 h)")
               : "Durée : —";
           durationLabel.classList.toggle("heure-invalide", complete && !valid);
         });
@@ -364,12 +366,14 @@
         const startMinute = reglesMetier.lireHeureEnMinutes(debut),
           endMinute = reglesMetier.lireHeureEnMinutes(fin),
           complete = startMinute !== null && endMinute !== null,
-          valid = complete && endMinute > startMinute,
+          valid = complete && reglesMetier.intervalleArretValide(debut, fin, current.quart),
           duration = row.querySelector("[data-duree-generateur]");
         duration.textContent = valid
-          ? `Fonctionnement : ${reglesMetier.formaterDuree(reglesMetier.dureeArret({ start: debut, end: fin }))}`
+          ? `Fonctionnement : ${reglesMetier.formaterDuree(reglesMetier.dureeArret({ start: debut, end: fin }, current.quart))}`
           : complete
-            ? "Fin après le début requise"
+            ? (endMinute < startMinute && current.quart !== "23h-07h"
+                ? "Seul le quart 23h-07h peut passer minuit"
+                : "Durée invalide (maximum 8 h)")
             : "Fonctionnement : —";
         duration.classList.toggle("heure-invalide", complete && !valid);
       });

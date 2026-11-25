@@ -93,11 +93,13 @@ body.connecte footer { display: none; }
 .entete-dashboard .filtre-periode input { width: 130px; }
 .entete-dashboard .bouton.secondaire { min-height: 34px; padding: 6px 10px; }
 .contenu-dashboard { min-height: 0; flex: 1 1 auto; display: grid; align-content: start; gap: 12px; overflow: visible; padding: 16px 18px; }
-.contenu-dashboard:has(.cartes) { grid-template-rows: minmax(72px, auto) minmax(170px, .9fr) minmax(230px, 1.1fr); }
+.contenu-dashboard:has(.cartes) { flex: 0 0 auto; display: flex; flex-direction: column; overflow: visible; }
+.contenu-dashboard:has(.cartes) > * { flex: 0 0 auto; }
 .contenu-dashboard:has(.cartes) > .cartes { margin: 0; }
-.contenu-dashboard:has(.cartes) > .resume-accueil, .contenu-dashboard:has(.cartes) > .tendance-accueil { min-height: 0; margin-top: 0; }
+.contenu-dashboard:has(.cartes) > .resume-accueil, .contenu-dashboard:has(.cartes) > .tendance-accueil { min-height: 320px; margin-top: 0; }
 .contenu-dashboard:has(.cartes) > .resume-accueil { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .contenu-dashboard:has(.cartes) .panneau { min-width: 0; min-height: 0; overflow: hidden; padding: 12px; }
+.contenu-dashboard:has(.cartes) > .tendance-accueil { min-height: 340px; }
 .contenu-dashboard:has(.cartes) .zones-accueil, .contenu-dashboard:has(.cartes) .repartition-accueil, .contenu-dashboard:has(.cartes) > .tendance-accueil { display: flex; flex-direction: column; }
 .contenu-dashboard:has(.cartes) .grille-zones { min-height: 0; flex: 1; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .contenu-dashboard:has(.cartes) .carte-zone { justify-content: center; }
@@ -106,4 +108,4 @@ body.connecte footer { display: none; }
 .contenu-dashboard:has(.cartes) .conteneur-graphique-ligne { min-height: 0; flex: 1; overflow: hidden; }
 .contenu-dashboard:has(.cartes) .graphique-ligne { min-width: 0; height: 100%; }
 @media (max-width: 1000px) { .entete-dashboard { align-items: flex-start; flex-wrap: wrap; } .entete-dashboard .barre-filtres { flex-wrap: wrap; border-left: 0; padding: 0; } }
-@media (max-width: 760px) { body.connecte { overflow: auto; } body.connecte .page { height: auto; min-height: 100vh; } .coquille { height: auto; grid-template-columns: 1fr; } .barre-laterale { min-height: 0; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 10px; } .usine { flex: 1 1 100%; margin: 4px 8px 8px; } .barre-laterale button { flex: 1 1 145px; text-align: center; } .barre-laterale .deconnexion { margin-top: 0; } .principal { height: auto; min-height: calc(100vh - 130px); } .entete-dashboard { padding: 12px 14px; } .entete-dashboard .barre-filtres { justify-content: flex-start; } .contenu-dashboard { min-height: 65vh; } .contenu-dashboard:has(.cartes) { grid-template-rows: auto auto minmax(250px, auto); } .contenu-dashboard:has(.cartes) > .resume-accueil { grid-template-columns: 1fr; } .contenu-dashboard:has(.cartes) .zones-accueil .grille-zones { flex: 0 0 auto; } .entete-dashboard .filtre-periode { flex-wrap: wrap; } }
+@media (max-width: 760px) { body.connecte { overflow: auto; } body.connecte .page { height: auto; min-height: 100vh; } .coquille { height: auto; grid-template-columns: 1fr; } .barre-laterale { min-height: 0; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 10px; } .usine { flex: 1 1 100%; margin: 4px 8px 8px; } .barre-laterale button { flex: 1 1 145px; text-align: center; } .barre-laterale .deconnexion { margin-top: 0; } .principal { height: auto; min-height: calc(100vh - 130px); } .entete-dashboard { padding: 12px 14px; } .entete-dashboard .barre-filtres { justify-content: flex-start; } .contenu-dashboard { min-height: 65vh; } .contenu-dashboard:has(.cartes) > .resume-accueil { grid-template-columns: 1fr; } .contenu-dashboard:has(.cartes) .zones-accueil .grille-zones { flex: 0 0 auto; } .entete-dashboard .filtre-periode { flex-wrap: wrap; } }

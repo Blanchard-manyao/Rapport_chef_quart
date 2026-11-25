@@ -611,18 +611,39 @@ body {
   overflow: auto;
 }
 .contenu:has(.cartes) {
-  display: grid;
-  grid-template-rows: minmax(72px, auto) minmax(170px, 0.9fr) minmax(230px, 1.1fr);
+  display: flex;
+  flex-direction: column;
   gap: 12px;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 12px 18px;
+}
+.contenu:has(.cartes) > * {
+  flex: 0 0 auto;
+}
+.contenu:has(.creation-accueil) > .creation-accueil {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 12px 18px;
+}
+.creation-accueil h2 {
+  margin: 0;
+}
+.creation-accueil p {
+  margin: 4px 0 0;
+}
+.creation-accueil button {
+  margin-top: 10px;
+  min-height: 42px;
+  white-space: nowrap;
 }
 .contenu:has(.cartes) > .cartes {
   margin: 0;
 }
 .contenu:has(.cartes) > .resume-accueil,
 .contenu:has(.cartes) > .tendance-accueil {
-  min-height: 0;
+  min-height: 320px;
   margin-top: 0 !important;
 }
 .contenu:has(.cartes) > .resume-accueil {
@@ -631,6 +652,7 @@ body {
 .contenu:has(.cartes) > .tendance-accueil {
   display: flex;
   flex-direction: column;
+  min-height: 340px;
 }
 .contenu:has(.cartes) .panneau {
   min-width: 0;
@@ -762,8 +784,8 @@ body {
 }
 @media (max-width: 760px) {
   .contenu:has(.cartes) {
-    grid-template-rows: auto auto minmax(250px, auto);
-    overflow: auto;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
   .contenu:has(.cartes) > .resume-accueil {
     grid-template-columns: 1fr;
@@ -885,7 +907,6 @@ body {
 }
 @media (max-height: 760px) {
   .contenu:has(.cartes) {
-    grid-template-rows: minmax(62px, auto) minmax(180px, 0.9fr) minmax(210px, 1.1fr);
     gap: 8px;
     padding-block: 8px;
   }
