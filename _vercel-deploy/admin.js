@@ -3,6 +3,7 @@
 const zonesArret = ["Prélavage", "Conditionnement", "Ligne 1", "Ligne 2", "Séchage", "Autre"];
 const equipes = ["A", "B", "C", "D"];
 const couleurs = ["#2563eb", "#f59e0b", "#ff2c2c", "#16a34a"];
+const KG_PAR_COLIS = 1260;
 const etat = { rapports: [], debut: "", fin: "", mois: new Date().toISOString().slice(0, 7), jour: "", onglet: "home" };
 const elements = {
   connexion: document.querySelector("#connexion"), tableau: document.querySelector("#tableauDeBord"),
@@ -135,6 +136,7 @@ function afficherTableauDeBord() {
   const moisDuGraphique = new Set(rapports.map((rapport) => String(rapport.date || "").slice(0, 7)).filter(Boolean));
   const modeGraphique = moisDuGraphique.size > 1 ? "month" : "day";
   const production = somme(rapports.map((rapport) => rapport.production?.paniers));
+  const tonnageKg = somme(rapports.map((rapport) => nombre(rapport.production?.tonnageKg) || nombre(rapport.production?.paniers) * KG_PAR_COLIS));
   const totauxEquipes = equipes.map((equipe) => somme(rapports.filter((rapport) => rapport.equipe === equipe).map((rapport) => rapport.production?.paniers)));
   const totalEquipes = somme(totauxEquipes);
   let angle = 0;
@@ -161,7 +163,7 @@ function afficherTableauDeBord() {
     return `<div class="ligne-zone"><span><i class="point couleur-equipe-${equipe.toLowerCase()}"></i>Équipe ${equipe} · ${part} %</span><b>${formaterNombre(totauxEquipes[index])} colis</b></div>`;
   }).join("");
 
-  elements.contenu.innerHTML = `<div class="cartes"><div class="carte">Rapports enregistrés<b>${formaterNombre(rapports.length)}</b></div><div class="carte">Production de la période<b>${formaterNombre(production)} colis</b></div></div>
+  elements.contenu.innerHTML = `<div class="cartes"><div class="carte">Rapports enregistrés<b>${formaterNombre(rapports.length)}</b></div><div class="carte"><span>Production de la période</span><div class="valeurs-production"><b>${formaterNombre(production)} colis</b><span>${formaterNombre(tonnageKg)} kg réalisés</span></div></div></div>
     <div class="grille-deux resume-accueil"><section class="panneau zones-accueil"><h2>Temps d’arrêt par zone</h2><div class="grille-zones">${zones.map(({ nom, minutes }) => `<article class="carte-zone"><span>${echapper(nom)}</span><b>${duree(minutes)}</b></article>`).join("")}</div></section>
     <section class="panneau repartition-accueil"><h2>Répartition de la production par équipe</h2><div class="disposition-camembert"><svg class="camembert" viewBox="0 0 100 100" role="img" aria-label="Répartition de la production entre les équipes">${secteurs}${etiquettesSecteurs.join("")}</svg><div>${repartition}</div></div></section></div>
     <section class="panneau tendance-accueil"><h2>Évolution de la production par équipe — ${modeGraphique === "month" ? "par mois" : "par jour"}</h2>${courbeProduction(rapports, modeGraphique)}</section>`;

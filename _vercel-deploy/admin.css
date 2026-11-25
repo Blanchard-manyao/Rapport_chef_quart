@@ -41,6 +41,8 @@ input:focus, select:focus { outline: 3px solid #2a7eb333; border-color: #2871a9;
 .cartes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .cartes .carte { display: flex; flex-direction: column; gap: 8px; color: #66798c; }
 .cartes b { color: #173653; font-size: 26px; }
+.valeurs-production { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; }
+.valeurs-production span { color: #52677d; font-weight: 600; }
 .grille-deux { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .panneau { padding: 18px; }
 .grille-zones { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
@@ -61,14 +63,14 @@ input:focus, select:focus { outline: 3px solid #2a7eb333; border-color: #2871a9;
 .serie-graphique.equipe-c path { stroke: #ff2c2c; }
 .serie-graphique.equipe-d path { stroke: #16a34a; }
 .tendance-accueil { min-height: 315px; }
-.graphique-ligne-avec-legende { display: grid; grid-template-columns: minmax(0, 1fr) max-content; gap: 14px; align-items: stretch; }
+.graphique-ligne-avec-legende { display: flex; flex-direction: column; gap: 10px; }
 .conteneur-graphique-ligne { min-width: 0; overflow-x: auto; }
 .graphique-ligne { display: block; width: 100%; min-width: 700px; height: 245px; overflow: visible; }
 .grille-graphique line { stroke: #e2e8f0; }
 .grille-graphique text, .date-graphique { fill: #66798c; font: 11px "Segoe UI", Arial, sans-serif; }
 .serie-graphique path { fill: none; stroke-width: 3; }
 .serie-graphique circle { stroke: #fff; stroke-width: 1.5; }
-.legende { display: flex; flex-direction: column; gap: 9px; padding-top: 8px; font-size: 13px; }
+.legende { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 9px 18px; padding-top: 0; font-size: 13px; }
 .legende span { white-space: nowrap; }
 .entete-tableau { margin-bottom: 12px; }
 .entete-tableau h2 { margin: 0; }
