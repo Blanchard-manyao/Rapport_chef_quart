@@ -233,7 +233,7 @@ function ecrireEtatBase() {
       );
     for (const [username, attempt] of Object.entries(donnees.loginAttempts || {}))
       baseSqlite.query("INSERT INTO login_attempts (username, attempts, locked_until) VALUES (?, ?, ?)", [username, Number(attempt.count) || 0, Number(attempt.until) || 0]);
-    for (const setting of ["recoveryKey", "recoveryAcknowledged", "legacyConnected"])
+    for (const setting of ["recoveryKey", "recoveryAcknowledged", "legacyConnected", "syncPendingScopes"])
       if (donnees[setting] !== undefined)
         baseSqlite.query("INSERT INTO app_settings (setting, value_json) VALUES (?, ?)", [setting, JSON.stringify(donnees[setting])]);
     baseSqlite.exec("COMMIT");
@@ -303,6 +303,7 @@ async function chargerBase() {
   donnees.users ||= {};
   donnees.reports = (donnees.reports || []).map(normaliserRapport);
   donnees.loginAttempts ||= {};
+  donnees.syncPendingScopes = Array.isArray(donnees.syncPendingScopes) ? donnees.syncPendingScopes : [];
   if (!donnees.recoveryKey) {
     donnees.recoveryKey = cryptographie.randomBytes(20).toString("hex").toUpperCase();
     donnees.recoveryAcknowledged = false;
@@ -317,6 +318,18 @@ async function chargerBase() {
 function sauvegarderBase() {
   fichiers.mkdirSync(applicationElectron.getPath("userData"), { recursive: true });
   ecrireEtatBase();
+}
+function ajouterSynchronisationEnAttente(scope) {
+  donnees.syncPendingScopes ||= [];
+  if (!donnees.syncPendingScopes.includes(scope)) donnees.syncPendingScopes.push(scope);
+  sauvegarderBase();
+}
+function retirerSynchronisationEnAttente(scope) {
+  donnees.syncPendingScopes ||= [];
+  donnees.syncPendingScopes = scope === "*"
+    ? []
+    : donnees.syncPendingScopes.filter((value) => value !== scope);
+  sauvegarderBase();
 }
 // Recharge le fichier partagé sans perdre la dernière copie valide en mémoire.
 function actualiserDonneesPartagees() {
@@ -355,7 +368,7 @@ function heureEnMinutes(value) {
     minute = Number(match[2] || 0);
   return hour <= 23 && minute <= 59 ? hour * 60 + minute : null;
 }
-// Vérifie l’ordre des heures côté serveur, même si l’interface est contournée.
+// Vérifie les heures côté serveur, y compris les arrêts de nuit après minuit.
 function validerPlagesHorairesRapport(report) {
   const intervals = [
     ...(report.stops || []).map((stop) => ({
@@ -383,10 +396,13 @@ function validerPlagesHorairesRapport(report) {
       throw new Error(
         `Heure invalide pour ${interval.label}. Saisissez une heure comme 07H30.`,
       );
-    if (end <= start)
+    if (end === start || (end < start && report.quart !== "23h-07h"))
       throw new Error(
-        `L’heure de fin doit être supérieure à l’heure de début pour ${interval.label}.`,
+        `La fin doit suivre le début pour ${interval.label}. Seul le quart 23h-07h peut passer minuit.`,
       );
+    const duration = (end - start + 1440) % 1440;
+    if (duration > 480)
+      throw new Error(`La durée ne peut pas dépasser 8 heures pour ${interval.label}.`);
   }
 }
 function hachageAncienMotDePasse(p) {
@@ -1019,16 +1035,27 @@ ipcMain.handle("configure-sync-credentials", (_, { username, password } = {}) =>
   consignerEvenement("INFO", "Identifiants du portail enregistrés dans le stockage sécurisé Windows");
   return true;
 });
-ipcMain.handle("sync-reports", async () => {
+ipcMain.handle("sync-reports", async (_, { automatic = false, offline = false } = {}) => {
   if (!utilisateurActif)
     throw new Error("Connectez-vous avant de synchroniser les rapports.");
 
   actualiserDonneesPartagees();
+  const scope = utilisateurActif === "Administrateur" ? "*" : utilisateurActif;
+  const pendingScopes = donnees.syncPendingScopes || [];
+  const pendingForUser = utilisateurActif === "Administrateur"
+    ? pendingScopes.length > 0
+    : pendingScopes.includes(scope);
+  if (automatic && !pendingForUser) return { pending: false, queued: false, synced: 0, total: 0 };
   const reports = (donnees.reports || []).filter(
     (report) => report?.date && report?.quart && report?.equipe &&
       (utilisateurActif === "Administrateur" || report.equipe === utilisateurActif),
   );
-  if (!reports.length) return { synced: 0, total: 0 };
+  if (!reports.length) {
+    if (pendingForUser) retirerSynchronisationEnAttente(scope);
+    return { pending: false, queued: false, synced: 0, total: 0 };
+  }
+  if (!automatic) ajouterSynchronisationEnAttente(scope);
+  if (offline) return { pending: true, queued: true, synced: 0, total: reports.length };
 
   const identifiantsPortail = lireIdentifiantsPortail();
   if (!identifiantsPortail)
@@ -1044,6 +1071,7 @@ ipcMain.handle("sync-reports", async () => {
       signal: AbortSignal.timeout(30000),
     });
   let cookie = "";
+  let synced = 0;
   try {
     const login = await envoyer(`${origin}/api/admin/login`, {
       method: "POST",
@@ -1053,13 +1081,13 @@ ipcMain.handle("sync-reports", async () => {
     motDePasse = "";
     if (!login.ok) {
       const details = await login.json().catch(() => ({}));
+      if (login.status >= 500) { const error = new Error(details.error || "Portail temporairement indisponible."); error.retryable = true; throw error; }
       throw new Error(details.error || "Connexion au portail refusée.");
     }
     cookie = String(login.headers.get("set-cookie") || "").split(";", 1)[0];
     if (!cookie.startsWith("rapport_cq_admin="))
       throw new Error("Le portail n’a pas fourni de session valide.");
 
-    let synced = 0;
     for (let index = 0; index < reports.length; index += 50) {
       const batch = reports.slice(index, index + 50);
       const response = await envoyer(`${origin}/api/admin/reports`, {
@@ -1072,6 +1100,7 @@ ipcMain.handle("sync-reports", async () => {
       });
       if (!response.ok) {
         const details = await response.json().catch(() => ({}));
+        if (response.status >= 500) { const error = new Error(details.error || "Portail temporairement indisponible."); error.retryable = true; throw error; }
         throw new Error(
           synced
             ? `Synchronisation partielle : ${synced} rapport(s) envoyé(s). Relancez-la pour terminer.`
@@ -1081,12 +1110,14 @@ ipcMain.handle("sync-reports", async () => {
       synced += batch.length;
     }
     consignerEvenement("INFO", `${synced} rapport(s) synchronisé(s) vers le portail distant`);
-    return { synced, total: reports.length };
+    retirerSynchronisationEnAttente(scope);
+    return { pending: false, queued: false, synced, total: reports.length };
   } catch (error) {
-    if (error.name === "TimeoutError" || error.name === "AbortError")
-      throw new Error("Le portail ne répond pas. Vérifiez la connexion puis relancez la synchronisation.");
-    if (error instanceof TypeError)
-      throw new Error("Connexion au portail impossible. Vérifiez votre connexion Internet.");
+    if (error.name === "TimeoutError" || error.name === "AbortError" || error instanceof TypeError || error.retryable) {
+      ajouterSynchronisationEnAttente(scope);
+      consignerEvenement("INFO", `Synchronisation hors ligne mise en attente (${scope})`);
+      return { pending: true, queued: true, synced, total: reports.length };
+    }
     throw error;
   } finally {
     motDePasse = "";

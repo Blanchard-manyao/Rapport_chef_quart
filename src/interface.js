@@ -15,6 +15,7 @@ const etatInterface = {
   ancienneBaseConnectee: false,
   questionAncienneBaseAffichee: false,
   minuteurActualisation: null,
+  synchronisationEnCours: false,
   versionSession: 0,
   identifiantRapportArretsSelectionne: null,
   cibleArretsSelectionnee: null,
@@ -58,6 +59,34 @@ function afficherNotification(s) {
   document.body.append(e);
   setTimeout(() => e.remove(), 3200);
 }
+let minuteurRelanceSynchronisation = null;
+function programmerRelanceSynchronisation() {
+  if (minuteurRelanceSynchronisation) return;
+  minuteurRelanceSynchronisation = setTimeout(() => {
+    minuteurRelanceSynchronisation = null;
+    synchroniserEnAttente(true);
+  }, 30000);
+}
+async function synchroniserEnAttente(notifier = false) {
+  if (!etatInterface.utilisateur || !navigator.onLine || etatInterface.synchronisationEnCours) return;
+  etatInterface.synchronisationEnCours = true;
+  try {
+    const result = await rapportQuart.synchroniserRapportsDistants({ automatic: true });
+    if (result.queued) {
+      if (notifier) afficherNotification("La connexion est instable. Les rapports restent en attente de synchronisation.");
+      programmerRelanceSynchronisation();
+    } else {
+      if (minuteurRelanceSynchronisation) clearTimeout(minuteurRelanceSynchronisation);
+      minuteurRelanceSynchronisation = null;
+      if (notifier && result.synced) afficherNotification(`${result.synced} rapport(s) synchronisé(s) automatiquement.`);
+    }
+  } catch (error) {
+    console.error("Synchronisation automatique impossible :", error);
+  } finally {
+    etatInterface.synchronisationEnCours = false;
+  }
+}
+window.addEventListener("online", () => synchroniserEnAttente(true));
 async function rechargerDonnees(versionAttendue = etatInterface.versionSession) {
   const x = await rapportQuart.chargerDonneesInitiales();
   if (versionAttendue !== etatInterface.versionSession) return false;
@@ -194,6 +223,7 @@ function afficherConnexion(refocaliserApresConnexion = false) {
       etatInterface.minuteurActualisation = setInterval(actualiserDonneesAdmin, 5000);
     afficherEcran();
     afficherNotification(res.first ? "Mot de passe initialisé." : "Connexion établie.");
+    synchroniserEnAttente(false);
     if (
       etatInterface.administrateur &&
       etatInterface.ancienneBaseDisponible &&
@@ -433,7 +463,7 @@ function dialogueSynchronisationDistante() {
   const modal = document.createElement("div");
   modal.className = "fenetre-modale";
   const portee = etatInterface.administrateur ? "tous les rapports locaux" : `les rapports de l’équipe ${etatInterface.utilisateur}`;
-  modal.innerHTML = `<section class="panneau"><h2>Synchroniser les rapports</h2><p>${total} rapport(s) (${portee}) seront envoyés au portail par connexion HTTPS. Les accès ont été enregistrés une fois par l’administrateur local et sont chiffrés sur ce poste. Les chefs de quart n’ont rien à saisir.</p><form id="formulaireSynchronisation"><p class="discret" id="etatSynchronisation"></p><div class="actions"><button type="submit" ${total ? "" : "disabled"}>Synchroniser ${total} rapport(s)</button>${etatInterface.administrateur ? '<button type="button" class="secondaire" id="ouvrirConfigurationDepuisSync">Configurer les accès</button>' : ""}<button type="button" class="secondaire" onclick="this.closest('.fenetre-modale').remove()">Fermer</button></div></form></section>`;
+  modal.innerHTML = `<section class="panneau"><h2>Synchroniser les rapports</h2><p>${total} rapport(s) (${portee}) seront envoyés au portail dès que la connexion sera disponible. Hors connexion, la demande est conservée sur ce poste et sera reprise automatiquement. Les accès restent chiffrés sur ce poste ; les chefs de quart n’ont rien à saisir.</p><form id="formulaireSynchronisation"><p class="discret" id="etatSynchronisation"></p><div class="actions"><button type="submit" ${total ? "" : "disabled"}>Synchroniser ${total} rapport(s)</button>${etatInterface.administrateur ? '<button type="button" class="secondaire" id="ouvrirConfigurationDepuisSync">Configurer les accès</button>' : ""}<button type="button" class="secondaire" onclick="this.closest('.fenetre-modale').remove()">Fermer</button></div></form></section>`;
   document.body.append(modal);
   const form = modal.querySelector("#formulaireSynchronisation");
   const status = modal.querySelector("#etatSynchronisation");
@@ -446,15 +476,26 @@ function dialogueSynchronisationDistante() {
       modal.remove();
       return;
     }
+    if (etatInterface.synchronisationEnCours) return;
+    etatInterface.synchronisationEnCours = true;
     submit.disabled = true;
-    status.textContent = "Synchronisation en cours…";
+    status.textContent = navigator.onLine ? "Synchronisation en cours…" : "Mise en attente jusqu’au retour de la connexion…";
     try {
-      const result = await rapportQuart.synchroniserRapportsDistants();
-      status.textContent = `${result.synced} rapport(s) synchronisé(s) sur ${result.total}.`;
-      submit.textContent = "Synchronisation terminée";
+      const result = await rapportQuart.synchroniserRapportsDistants({ offline: !navigator.onLine });
+      if (result.queued) {
+        status.textContent = `${result.synced} rapport(s) déjà envoyé(s) sur ${result.total}. Le reste est en attente et sera synchronisé automatiquement au retour de la connexion.`;
+        submit.textContent = "Synchronisation en attente";
+        if (navigator.onLine) programmerRelanceSynchronisation();
+      } else {
+        status.textContent = `${result.synced} rapport(s) synchronisé(s) sur ${result.total}.`;
+        submit.textContent = "Synchronisation terminée";
+      }
+      submit.disabled = true;
     } catch (error) {
       status.textContent = error.message || "Synchronisation impossible.";
       submit.disabled = !etatInterface.rapports.length;
+    } finally {
+      etatInterface.synchronisationEnCours = false;
     }
   };
 }
@@ -476,8 +517,9 @@ function dialogueConfigurationSynchronisation() {
     try {
       await rapportQuart.configurerIdentifiantsSynchronisation({ username, password });
       form.reset();
-      status.textContent = "Accès enregistrés de manière chiffrée sur ce poste. Lancez une synchronisation pour vérifier la connexion.";
+      status.textContent = "Accès enregistrés de manière chiffrée sur ce poste. Les demandes en attente seront reprises automatiquement.";
       submit.textContent = "Accès enregistrés";
+      synchroniserEnAttente(true);
     } catch (error) {
       form.elements.password.value = "";
       status.textContent = error.message || "Impossible d’enregistrer les accès.";
