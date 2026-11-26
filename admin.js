@@ -296,7 +296,7 @@ function afficherTempsArret() {
 }
 
 function afficherOnglet() {
-  const titres = { home: "Tableau de bord", reports: "Rapports enregistrés", stops: "Temps d’arrêt par zone" };
+  const titres = { home: "Tableau de bord", reports: "Rapports enregistrés", stops: "Temps d’arrêts" };
   elements.titre.textContent = titres[etat.onglet];
   document.querySelectorAll("[data-onglet]").forEach((bouton) => bouton.classList.toggle("actif", bouton.dataset.onglet === etat.onglet));
   if (etat.onglet === "reports") afficherRapportsEnregistres();
