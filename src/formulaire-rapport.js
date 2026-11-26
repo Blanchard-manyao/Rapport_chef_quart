@@ -360,7 +360,9 @@
           durationLabel.textContent = valid
             ? `${impact === "equipment" ? `Panne ${equipment || "équipement"}` : "Arrêt de zone"} : ${reglesMetier.formaterDuree(duration)}`
             : complete
-              ? (endMinute < startMinute && current.quart !== "23h-07h"
+              ? (!reglesMetier.intervalleDansQuart(debut, fin, current.quart)
+                  ? `Heure hors du quart ${current.quart}`
+                  : endMinute < startMinute && current.quart !== "23h-07h"
                   ? "Seul le quart 23h-07h peut passer minuit"
                   : "Durée invalide (maximum 8 h)")
               : "Durée : —";
@@ -380,7 +382,9 @@
         duration.textContent = valid
           ? `Fonctionnement : ${reglesMetier.formaterDuree(reglesMetier.dureeArret({ start: debut, end: fin }, current.quart))}`
           : complete
-            ? (endMinute < startMinute && current.quart !== "23h-07h"
+            ? (!reglesMetier.intervalleDansQuart(debut, fin, current.quart)
+                ? `Heure hors du quart ${current.quart}`
+                : endMinute < startMinute && current.quart !== "23h-07h"
                 ? "Seul le quart 23h-07h peut passer minuit"
                 : "Durée invalide (maximum 8 h)")
             : "Fonctionnement : —";
@@ -411,6 +415,7 @@
         field.value = field.value.slice(0, 5);
       actualiserApercu();
     });
+    form.addEventListener("change", actualiserApercu);
     actualiserApercu();
     modal.querySelector("#copierRapport").onclick = async () => {
       const text = modal.querySelector("#texteRapportCopier").value;

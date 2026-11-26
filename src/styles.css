@@ -1,5 +1,7 @@
 * {
   box-sizing: border-box;
+  cursor: pointer;
+  user-select: none;
 }
 body {
   margin: 0;
@@ -132,10 +134,12 @@ button.alerte {
 }
 .cartes {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
   margin-bottom: 18px;
 }
+.cartes .carte { min-width: 0; min-height: 76px; padding: 12px 15px; }
+.cartes .carte b { margin-top: 4px; font-size: clamp(18px, 2vw, 23px); overflow-wrap: anywhere; }
 .carte,
 .panneau {
   background: white;
@@ -191,6 +195,7 @@ input {
 .conteneur-tableau {
   overflow: auto;
 }
+.details-arrets .conteneur-tableau { max-height: min(62dvh, 720px); overflow: auto; }
 table {
   border-collapse: collapse;
   width: 100%;
@@ -677,7 +682,7 @@ body {
 .contenu:has(.cartes) .conteneur-graphique-ligne {
   min-height: 0;
   flex: 1;
-  overflow: hidden;
+  overflow: auto;
 }
 .graphique-ligne {
   min-width: 0;
@@ -718,24 +723,30 @@ body {
 .graphique-ligne-avec-legende {
   min-height: 0;
   flex: 1;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
-  gap: 14px;
-  align-items: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 .graphique-ligne-avec-legende .legende {
-  flex-direction: column;
-  flex-wrap: nowrap;
-  align-items: flex-start;
-  gap: 9px;
-  margin: 8px 2px 0 0;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 16px;
+  margin: 0;
 }
 .graphique-ligne-avec-legende .legende span {
   white-space: nowrap;
 }
 .graphique-ligne-avec-legende .conteneur-graphique-ligne {
-  height: 100%;
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
+  overflow: auto;
 }
+.graphique-bandes .graphique-ligne { min-width: 540px; height: 260px; }
+.details-arrets table { min-width: 900px; }
+.rapport-lecture-seule { width: min(1000px, 94vw); max-height: 92dvh; overflow: auto; }
 .ligne-rapport,
 .ligne-rapport td {
   cursor: pointer;
@@ -807,9 +818,21 @@ body {
   .contenu:has(.cartes) .zones-accueil .grille-zones {
     flex: 0 0 auto;
   }
+  .contenu:has(.cartes) > .cartes { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .grille-formulaire, .section-rapport .grille-formulaire { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .details-arrets .conteneur-tableau { max-height: 58dvh; }
   .filtre-periode input[type="date"] {
     min-width: 118px;
   }
+}
+@media (max-width: 560px) {
+  .contenu { padding: 12px; }
+  .contenu:has(.cartes) > .cartes { grid-template-columns: 1fr; }
+  .grille-formulaire, .section-rapport .grille-formulaire { grid-template-columns: minmax(0, 1fr); }
+  .section-rapport .ligne-arret { grid-template-columns: minmax(0, 1fr); grid-template-areas: "zone" "equipment" "impact" "debut" "fin" "cause" "duration" "delete"; }
+  .section-rapport .ligne-generateur { grid-template-columns: minmax(0, 1fr); }
+  .actions, .actions-connexion { align-items: stretch; }
+  .actions button { max-width: 100%; white-space: normal; }
 }
 .capture-synthese {
   width: 100%;

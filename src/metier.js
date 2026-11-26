@@ -83,13 +83,23 @@ function formaterHeure(value) {
   if (n === null) return "";
   return `${String(Math.floor(n / 60)).padStart(2, "0")}H${String(n % 60).padStart(2, "0")}`;
 }
+function intervalleDansQuart(startValue, endValue, quart) {
+  const start = lireHeureEnMinutes(startValue), end = lireHeureEnMinutes(endValue);
+  const debutQuart = { [QUARTS[0]]: 7 * 60, [QUARTS[1]]: 15 * 60, [QUARTS[2]]: 23 * 60 }[quart];
+  if (start === null || end === null || debutQuart === undefined) return false;
+  const debut = (start - debutQuart + 1440) % 1440;
+  let fin = (end - debutQuart + 1440) % 1440;
+  if (fin <= debut) fin += 1440;
+  return debut < MINUTES_PAR_QUART && fin <= MINUTES_PAR_QUART && fin > debut;
+}
 // intervalleArretValide : autorise le passage à minuit uniquement au quart de nuit.
 function intervalleArretValide(startValue, endValue, quart) {
   const start = lireHeureEnMinutes(startValue),
     end = lireHeureEnMinutes(endValue);
   if (start === null || end === null || start === end) return false;
   if (end < start && quart !== QUARTS[2]) return false;
-  return (end - start + 1440) % 1440 <= MINUTES_PAR_QUART;
+  return intervalleDansQuart(startValue, endValue, quart) &&
+    (end - start + 1440) % 1440 <= MINUTES_PAR_QUART;
 }
 // dureeArret : calcule la durée et prend en charge le passage à minuit du quart de nuit.
 function dureeArret(stop, quart) {
@@ -198,6 +208,8 @@ function validerRapport(r) {
       errors.push(`Heure invalide pour ${label}. Saisissez une heure comme 07H30.`);
     } else if (start === end || (end < start && r.quart !== QUARTS[2])) {
       errors.push(`La fin de ${label} doit suivre le début. Seul le quart 23h-07h peut passer minuit.`);
+    } else if (!intervalleDansQuart(startValue, endValue, r.quart)) {
+      errors.push(`Les heures de ${label} doivent être comprises dans le quart ${r.quart}.`);
     } else if (!intervalleArretValide(startValue, endValue, r.quart)) {
       errors.push(`La durée de ${label} ne peut pas dépasser 8 heures.`);
     }
@@ -389,6 +401,7 @@ window.ReglesMetier = Object.freeze({
   lireHeureEnMinutes,
   formaterHeure,
   intervalleArretValide,
+  intervalleDansQuart,
   dureeArret,
   formaterDuree,
   effectifPresent,

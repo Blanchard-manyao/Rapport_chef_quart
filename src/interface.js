@@ -201,7 +201,10 @@ function afficherConnexion(refocaliserApresConnexion = false) {
       return;
     }
     if (!res.ok) {
-      selectionner("#messageConnexion").textContent = res.message;
+      const remaining = Number.isInteger(res.remainingAttempts)
+        ? ` Tentatives restantes : ${res.remainingAttempts} sur 5.`
+        : "";
+      selectionner("#messageConnexion").textContent = `${res.message}${remaining}`;
       submitButton.disabled = false;
       return;
     }
@@ -647,7 +650,33 @@ function courbeProduction(reports, mode = "day") {
     )
     .join("");
 
-  return `<div class="graphique-ligne-avec-legende"><div class="conteneur-graphique-ligne"><svg class="graphique-ligne" viewBox="0 0 ${width} ${height}" role="img" aria-label="Évolution de la production par équipe ${mode === "month" ? "par mois" : "par jour"}">${grid}${series}${labels}</svg></div><div class="legende">${legend}</div></div>`;
+  return `<div class="graphique-ligne-avec-legende"><div class="conteneur-graphique-ligne"><svg class="graphique-ligne" style="min-width:${width}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="Évolution de la production par équipe ${mode === "month" ? "par mois" : "par jour"}">${grid}${series}${labels}</svg></div><div class="legende">${legend}</div></div>`;
+}
+function graphiqueComparaisonQuarts(reports) {
+  const quarts = reglesMetier.QUARTS;
+  const valeurs = quarts.map((quart) => calculerSomme(reports.filter((rapport) => rapport.quart === quart).map((rapport) => rapport.production?.paniers)));
+  const maximum = Math.max(1, ...valeurs);
+  const largeur = 540, hauteur = 260, gauche = 62, droite = 520, haut = 20, bas = 205;
+  const y = (valeur) => bas - valeur / maximum * (bas - haut);
+  const grille = Array.from({ length: 5 }, (_, index) => {
+    const valeur = maximum * index / 4, position = y(valeur);
+    return `<g class="grille-graphique"><line x1="${gauche}" y1="${position}" x2="${droite}" y2="${position}"/><text x="${gauche - 8}" y="${position + 4}" text-anchor="end">${Math.round(valeur).toLocaleString("fr-FR")}</text></g>`;
+  }).join("");
+  const bandes = valeurs.map((valeur, index) => {
+    const x = gauche + 45 + index * 145, hauteurBande = Math.max(0, bas - y(valeur));
+    return `<g><rect x="${x}" y="${y(valeur)}" width="74" height="${hauteurBande}" rx="5" fill="${["#2563eb", "#f59e0b", "#16a34a"][index]}"><title>${quarts[index]} : ${valeur.toLocaleString("fr-FR")} colis</title></rect><text class="date-graphique" x="${x + 37}" y="226" text-anchor="middle">${quarts[index]}</text><text class="date-graphique" x="${x + 37}" y="${Math.max(14, y(valeur) - 7)}" text-anchor="middle">${valeur.toLocaleString("fr-FR")}</text></g>`;
+  }).join("");
+  return `<div class="conteneur-graphique-ligne graphique-bandes"><svg class="graphique-ligne" viewBox="0 0 ${largeur} ${hauteur}" role="img" aria-label="Comparaison de la production entre les trois quarts">${grille}${bandes}</svg></div>`;
+}
+function joursFiltresGraphique(reports) {
+  if (etatInterface.debutPeriode || etatInterface.finPeriode) {
+    const dates = reports.map((rapport) => rapport.date).filter(Boolean).sort();
+    const debut = etatInterface.debutPeriode || dates[0], fin = etatInterface.finPeriode || dates.at(-1);
+    if (debut && fin) return Math.floor((Date.parse(`${fin}T00:00:00`) - Date.parse(`${debut}T00:00:00`)) / 86400000) + 1;
+  }
+  if (etatInterface.jour) return 1;
+  const [annee, mois] = etatInterface.mois.split("-").map(Number);
+  return annee && mois ? new Date(annee, mois, 0).getDate() : 1;
 }
 function rapportModifiable(report) {
   if (!report || etatInterface.administrateur || report.equipe !== etatInterface.utilisateur || !report.createdAt)
@@ -698,13 +727,15 @@ function afficherAccueil(el) {
   const rs = rapportsPeriode(),
     st = tousLesArrets(rs),
     arretsZone = st.filter((stop) => stop.impact !== "equipment"),
-    tempsPannesEquipement = calculerSomme(st.filter((stop) => stop.impact === "equipment").map((stop) => stop.minutes)),
     prod = calculerSomme(rs.map((r) => r.production?.paniers)),
     tonnage = calculerSomme(rs.map((r) => r.production?.tonnageKg || (Number(r.production?.paniers || 0) * reglesMetier.KG_PAR_COLIS))),
-    zones = reglesMetier.ZONES_ARRET.map((zone) => ({
+    zones = reglesMetier.ZONES_ARRET.filter((zone) => zone !== "Séchage").map((zone) => ({
       name: zone,
       minutes: calculerSomme(arretsZone.filter((stop) => stop.zone === zone).map((stop) => stop.minutes)),
-    })),
+    })).concat([1, 2, 3].map((number) => ({
+      name: `Séchoir ${number}`,
+      minutes: calculerSomme(arretsZone.filter((stop) => stop.zone === "Séchage" && stop.equipment === `Séchoir ${number}`).map((stop) => stop.minutes)),
+    }))),
     colors = ["#2563eb", "#f59e0b", "#FF2C2C", "#16a34a"],
     equipes = Object.keys(reglesMetier.EQUIPES),
     totals = equipes.map((equipe) =>
@@ -741,9 +772,9 @@ function afficherAccueil(el) {
         .join("")
     : "";
 
-  const chartMonths = new Set(rs.map((r) => String(r.date || "").slice(0, 7)).filter(Boolean)),
-    chartMode = chartMonths.size > 1 ? "month" : "day",
-    chartTitle = chartMode === "month" ? "par mois" : "par jour";
+  const chartMonths = new Set(rs.map((r) => String(r.date || "").slice(0, 7)).filter(Boolean));
+  const chartMode = chartMonths.size > 1 ? "month" : "day";
+  const comparerQuarts = joursFiltresGraphique(rs) <= 3;
 
   const creationRapport = !etatInterface.administrateur
     ? '<section class="panneau creation-accueil"><h2>Nouveau rapport de quart</h2><p class="discret">Créez le rapport de votre équipe. Retrouvez ensuite vos rapports dans « Historique et rapports ».</p><button id="demarrerRapport">Créer un nouveau rapport</button></section>'
@@ -774,8 +805,8 @@ function afficherAccueil(el) {
     </section>
   </div>
   <section class="panneau tendance-accueil">
-    <h2>Évolution de la production par équipe — ${chartTitle}</h2>
-    ${courbeProduction(rs, chartMode)}
+    <h2>${comparerQuarts ? "Comparaison de la production par quart" : `Évolution de la production par équipe — ${chartMode === "month" ? "par mois" : "par jour"}`}</h2>
+    ${comparerQuarts ? graphiqueComparaisonQuarts(rs) : courbeProduction(rs, chartMode)}
   </section>`;
 }
 function afficherCreation(el) {
@@ -824,7 +855,7 @@ function afficherHistorique(el) {
     document
       .querySelectorAll("#tableauHistorique tbody tr[data-identifiant]")
       .forEach((tr) => {
-        tr.onclick = () => afficherArrets(tr.dataset.identifiant, "historyStops");
+        tr.onclick = () => afficherArrets(tr.dataset.identifiant, "arretsHistorique");
         tr.ondblclick = () => afficherSynthese(tr.dataset.identifiant);
       });
     lierBoutonsRapport(selectionner("#tableauHistorique"));
@@ -873,7 +904,27 @@ function afficherArrets(id, target = "reportStops") {
     box.innerHTML = "<p>Aucun arrêt enregistré pour ce rapport.</p>";
     return;
   }
-  box.innerHTML = `<div class="conteneur-tableau"><table><thead><tr><th>Type</th><th>Zone</th><th>Équipement</th><th>Début</th><th>Fin</th><th>Cause</th><th>Durée</th></tr></thead><tbody>${stops.map((s) => `<tr><td>${s.impact === "equipment" ? "Panne équipement, zone en marche" : "Arrêt de zone"}</td><td>${echapperTexteHtml(s.zone)}</td><td>${echapperTexteHtml(s.equipment || "—")}</td><td>${echapperTexteHtml(reglesMetier.formaterHeure(s.start))}</td><td>${echapperTexteHtml(reglesMetier.formaterHeure(s.end))}</td><td>${echapperTexteHtml(s.cause)}</td><td>${reglesMetier.formaterDuree(s.minutes)}</td></tr>`).join("")}</tbody></table></div>`;
+  box.innerHTML = `<div class="conteneur-tableau">
+      <table>
+        <thead>
+          <tr>
+          <th> Type</th><th>Zone</th>
+          <th>Équipement</th><th>Début</th>
+          <th>Fin</th><th>Cause</th>
+          <th>Durée</th>
+          </tr>
+        </thead>
+            <tbody>${stops.map((s) =>
+              `<tr>
+              <td>${s.impact === "equipment" ? "Panne équipement, zone en marche" : "Arrêt de zone"} </td>
+              <td>${echapperTexteHtml(s.zone)}</td>
+              <td>${echapperTexteHtml(s.equipment || "—")}</td>
+              <td>${echapperTexteHtml(reglesMetier.formaterHeure(s.start))}</td>
+              <td>${echapperTexteHtml(reglesMetier.formaterHeure(s.end))}</td>
+              <td>${echapperTexteHtml(s.cause)}</td><td>${reglesMetier.formaterDuree(s.minutes)}</td>
+              </tr>`).join("")}
+            </tbody>
+      </table></div>`;
 }
 function afficherVueArrets(el) {
   const st = tousLesArrets().sort(
@@ -883,10 +934,13 @@ function afficherVueArrets(el) {
       a.equipe.localeCompare(b.equipe) ||
       (reglesMetier.lireHeureEnMinutes(a.start) ?? 0) - (reglesMetier.lireHeureEnMinutes(b.start) ?? 0),
   );
-  const zoneTotals = reglesMetier.ZONES_ARRET.map((zone) => ({
+  const zoneTotals = reglesMetier.ZONES_ARRET.filter((zone) => zone !== "Séchage").map((zone) => ({
     name: zone,
     minutes: calculerSomme(st.filter((stop) => stop.zone === zone && stop.impact !== "equipment").map((stop) => stop.minutes)),
-  }));
+  })).concat([1, 2, 3].map((number) => ({
+    name: `Séchoir ${number}`,
+    minutes: calculerSomme(st.filter((stop) => stop.zone === "Séchage" && stop.equipment === `Séchoir ${number}` && stop.impact !== "equipment").map((stop) => stop.minutes)),
+  })));
   const equipmentTotals = Object.entries(st.reduce((totals, stop) => {
     if (stop.impact !== "equipment") return totals;
     const key = `${stop.zone} — ${stop.equipment || "Équipement non précisé"}`;
@@ -896,7 +950,8 @@ function afficherVueArrets(el) {
   const zoneCards = zoneTotals
     .map(
       ({ name, minutes }) =>
-        `<article class="carte-zone"><span>${echapperTexteHtml(name)}</span><b>${reglesMetier.formaterDuree(minutes)}</b></article>`,
+      `<article class="carte-zone"><span>${echapperTexteHtml(name)}</span>
+      <b>${reglesMetier.formaterDuree(minutes)}</b></article>`,
     )
     .join("");
   const rows = st
@@ -906,16 +961,17 @@ function afficherVueArrets(el) {
           !prev ||
           `${prev.date}|${prev.quart}|${prev.equipe}` !==
             `${s.date}|${s.quart}|${s.equipe}`;
-      return `<tr class="${startGroup ? "debut-groupe-arrets" : ""}"><td>${formaterDate(s.date)}</td><td>${echapperTexteHtml(s.quart)}</td><td>${echapperTexteHtml(s.equipe)}</td><td>${echapperTexteHtml(s.impact === "equipment" ? "Panne équipement, zone en marche" : "Arrêt de zone")}</td><td>${echapperTexteHtml(s.zone)}</td><td>${echapperTexteHtml(s.equipment || "—")}</td><td>${echapperTexteHtml(reglesMetier.formaterHeure(s.start))}–${echapperTexteHtml(reglesMetier.formaterHeure(s.end))}</td><td>${echapperTexteHtml(s.cause)}</td><td>${reglesMetier.formaterDuree(s.minutes)}</td></tr>`;
+      const zoneAffichee = /^Séchage$/i.test(s.zone) && /^Séchoir [123]$/i.test(s.equipment || "") ? s.equipment : s.zone;
+      return `<tr class="${startGroup ? "debut-groupe-arrets" : ""}"><td>${formaterDate(s.date)}</td><td>${echapperTexteHtml(s.quart)}</td><td>${echapperTexteHtml(s.equipe)}</td><td>${echapperTexteHtml(s.impact === "equipment" ? "Panne équipement, zone en marche" : "Arrêt de zone")}</td><td>${echapperTexteHtml(zoneAffichee)}</td><td>${echapperTexteHtml(s.equipment || "—")}</td><td>${echapperTexteHtml(s.cause)}</td><td>${echapperTexteHtml(reglesMetier.formaterHeure(s.start))}–${echapperTexteHtml(reglesMetier.formaterHeure(s.end))}</td><td>${reglesMetier.formaterDuree(s.minutes)}</td></tr>`;
     })
     .join("");
   const equipmentCards = equipmentTotals.length
     ? equipmentTotals.map(({ name, minutes }) => `<article class="carte-zone"><span>${echapperTexteHtml(name)} · panne sans arrêt de zone</span><b>${reglesMetier.formaterDuree(minutes)}</b></article>`).join("")
     : '<p class="discret">Aucune panne d’équipement sans arrêt de zone pour cette période.</p>';
-  el.innerHTML = `<div class="actions"><button id="exporterArrets">Exporter les arrêts XLSX</button></div><section class="panneau resume-arrets"><h2>Temps d’arrêt des zones</h2><div class="grille-zones">${zoneCards}</div></section><section class="panneau resume-arrets"><h2>Pannes d’équipement — zone en marche</h2><div class="grille-zones">${equipmentCards}</div></section><section class="panneau details-arrets"><h2>Détail par jour et quart — un arrêt distinct par ligne</h2><div class="conteneur-tableau"><table><thead><tr><th>Jour</th><th>Quart</th><th>Équipe</th><th>Type</th><th>Zone</th><th>Équipement</th><th>Heures</th><th>Cause</th><th>Durée</th></tr></thead><tbody>${rows || '<tr><td colspan="9">Aucun arrêt enregistré pour cette période.</td></tr>'}</tbody></table></div></section>`;
+  el.innerHTML = `<div class="actions"><button id="exporterArrets">Exporter les arrêts XLSX</button></div><section class="panneau resume-arrets"><h2>Temps d’arrêt des zones et séchoirs</h2><div class="grille-zones">${zoneCards}</div></section><section class="panneau resume-arrets"><h2>Pannes d’équipement — zone en marche</h2><div class="grille-zones">${equipmentCards}</div></section><section class="panneau details-arrets"><h2>Détail par jour et quart — un arrêt distinct par ligne</h2><div class="conteneur-tableau"><table><thead><tr><th>Jour</th><th>Quart</th><th>Équipe</th><th>Type</th><th>Zone</th><th>Équipement</th><th>Causes</th><th>Heures</th><th>Durée</th></tr></thead><tbody>${rows || '<tr><td colspan="9">Aucun arrêt enregistré pour cette période.</td></tr>'}</tbody></table></div></section>`;
   selectionner("#exporterArrets").onclick = async () => {
     const rows = [
-      ["Jour", "Quart", "Équipe", "Type", "Zone", "Équipement", "Début", "Fin", "Cause", "Durée"],
+      ["Jour", "Quart", "Équipe", "Type", "Zone", "Équipement", "Cause", "Heures", "Durée"],
       ...st.map((s) => [
         formaterDate(s.date),
         s.quart,
@@ -923,9 +979,8 @@ function afficherVueArrets(el) {
         s.impact === "equipment" ? "Panne équipement, zone en marche" : "Arrêt de zone",
         s.zone,
         s.equipment || "",
-        reglesMetier.formaterHeure(s.start),
-        reglesMetier.formaterHeure(s.end),
         s.cause,
+        `${reglesMetier.formaterHeure(s.start)}–${reglesMetier.formaterHeure(s.end)}`,
         reglesMetier.formaterDuree(s.minutes),
       ]),
     ];
@@ -1008,23 +1063,14 @@ function ouvrirRapport(id) {
   const d = reglesMetier.calculerIndicateurs(r),
     fmt = (k, v) =>
       `<div class="ligne-zone"><span>${echapperTexteHtml(k)}</span><b>${v == null || v === "" ? "—" : echapperTexteHtml(v)}</b></div>`,
-    stops = arretsDuRapport(r);
+    stops = arretsDuRapport(r),
+    generators = Object.entries(r.generators || {}).map(([name, periods]) => {
+      const detail = (periods || []).map((period) => `${reglesMetier.formaterHeure(period.start)}–${reglesMetier.formaterHeure(period.end)}`).join(", ") || "Aucune période";
+      return fmt(name, `${detail} · Fonctionnement : ${reglesMetier.formaterDuree(d.generatorRunTotals[name] || 0)}`);
+    }).join("");
   document.body.insertAdjacentHTML(
     "beforeend",
-    `<div class="fenetre-modale"><section class="panneau rapport-lecture-seule"><h2 class="titre-rapport"><span>Rapport de quart</span><button type="button" class="secondaire" onclick="this.closest('.fenetre-modale').remove()">Fermer</button></h2><p>${formaterDate(r.date)} · ${echapperTexteHtml(r.quart)} · Équipe ${echapperTexteHtml(r.equipe)} — ${echapperTexteHtml(reglesMetier.EQUIPES[r.equipe])}</p><h3>Effectif</h3>${fmt("Total", r.staff?.total)}${fmt("Présents", d.present)}${fmt("Absents", r.staff?.absent)}${fmt("Malades", r.staff?.malade)}${fmt("Permissions", r.staff?.permission)}${fmt("Congés", r.staff?.conge)}${fmt("Accidents", r.staff?.accidents)}<h3>Prélavage</h3>${fmt("Box 1", r.prelavage?.box)}${fmt("Godets", r.prelavage?.buckets)}${fmt("Tour de bennes", r.prelavage?.tourBennes)}${fmt("Total prélavé", `${reglesMetier.calculerIndicateurs(r).prelavageTotal.toLocaleString("fr-FR")} kg`)}${fmt("Box 2", r.prelavage?.secondBox)}${fmt("Godets box 2", r.prelavage?.secondBuckets)}<h3>Granulation</h3>${fmt("Box usinage", r.granulation?.box)}${fmt("Titre acide (g/l)", r.granulation?.acidTitre)}${fmt("Consommation acide (kg)", r.granulation?.acidConsumption)}${fmt("Paniers granulés", r.granulation?.baskets)}${fmt("Avance paniers", r.granulation?.basketAdvance)}${fmt("Paniers lavés", r.granulation?.basketsWashed)}<h3>Séchage et production</h3>${fmt("Paniers séchés", r.drying?.basketsDry)}${fmt("Production (colis)", r.production?.paniers)}${fmt("Tonnage (kg)", d.kg)}${fmt("Balles début / quart / traitées / fin", [r.production?.balesStart, r.production?.balesquart, r.production?.balesProcessed, r.production?.balesEnd].join(" / "))}${(r.drying?.sechoirs || []).map((x) => `<h4>Séchoir ${x.number}</h4>${fmt("Cycle / brûleurs 1–2", `${x.cycle} sec / ${x.bruleur1} / ${x.bruleur2}`)}${fmt("Compteur / gaz", `${x.counter || "—"} / ${x.gas1 || "—"} / ${x.gas2 || "—"}`)}`).join("")}<h3>Arrêts du quart</h3>${stops.length ? `<div class="conteneur-tableau"><table><thead><tr><th>Zone</th><th>Équipement</th><th>Début</th><th>Fin</th><th>Cause</th><th>Durée</th></tr></thead><tbody>${stops.map((s) => `<tr><td>${echapperTexteHtml(s.zone)}</td><td>${echapperTexteHtml(s.equipment || "—")}</td><td>${reglesMetier.formaterHeure(s.start)}</td><td>${reglesMetier.formaterHeure(s.end)}</td><td>${echapperTexteHtml(s.cause)}</td><td>${reglesMetier.formaterDuree(s.minutes)}</td></tr>`).join("")}</tbody></table></div>` : "<p>Aucun arrêt.</p>"}<h3>Groupes électrogènes</h3>${Object.entries(
-      r.generators || {},
-    )
-      .map(([name, items]) =>
-        fmt(
-          name,
-          (items || [])
-            .map((x) => `${reglesMetier.formaterHeure(x.start)}–${reglesMetier.formaterHeure(x.end)}`)
-            .join(", ") || "Aucune période",
-        ),
-      )
-      .join(
-        "",
-      )}<div class="actions"><button class="secondaire" onclick="this.closest('.fenetre-modale').remove()">Fermer</button></div></section></div>`,
+    `<div class="fenetre-modale"><section class="panneau rapport-lecture-seule"><h2 class="titre-rapport"><span>Rapport de quart</span><button type="button" class="secondaire" onclick="this.closest('.fenetre-modale').remove()">Fermer</button></h2><p>${formaterDate(r.date)} · ${echapperTexteHtml(r.quart)} · Équipe ${echapperTexteHtml(r.equipe)} — ${echapperTexteHtml(reglesMetier.EQUIPES[r.equipe])}</p><h3>Effectif</h3>${fmt("Total", r.staff?.total)}${fmt("Présents", d.present)}${fmt("Absents", r.staff?.absent)}${fmt("Malades", r.staff?.malade)}${fmt("Permissions", r.staff?.permission)}${fmt("Congés", r.staff?.conge)}${fmt("Accidents", r.staff?.accidents)}<h3>Prélavage</h3>${fmt("Box 1", r.prelavage?.box)}${fmt("Godets", r.prelavage?.buckets)}${fmt("Tour de bennes", r.prelavage?.tourBennes)}${fmt("Total prélavé", `${reglesMetier.calculerIndicateurs(r).prelavageTotal.toLocaleString("fr-FR")} kg`)}${fmt("Box 2", r.prelavage?.secondBox)}${fmt("Godets box 2", r.prelavage?.secondBuckets)}<h3>Granulation</h3>${fmt("Box usinage", r.granulation?.box)}${fmt("Titre acide (g/l)", r.granulation?.acidTitre)}${fmt("Consommation acide (kg)", r.granulation?.acidConsumption)}${fmt("Paniers granulés", r.granulation?.baskets)}${fmt("Avance paniers", r.granulation?.basketAdvance)}${fmt("Paniers lavés", r.granulation?.basketsWashed)}<h3>Séchage et production</h3>${fmt("Paniers séchés", r.drying?.basketsDry)}${fmt("Production (colis)", r.production?.paniers)}${fmt("Tonnage (kg)", d.kg)}${fmt("Balles début / quart / traitées / fin", [r.production?.balesStart, r.production?.balesquart, r.production?.balesProcessed, r.production?.balesEnd].join(" / "))}${(r.drying?.sechoirs || []).map((x) => `<h4>Séchoir ${x.number}</h4>${fmt("Cycle / brûleurs 1–2", `${x.cycle} sec / ${x.bruleur1} / ${x.bruleur2}`)}${fmt("Compteur / gaz", `${x.counter || "—"} / ${x.gas1 || "—"} / ${x.gas2 || "—"}`)}`).join("")}<h3>Arrêts du quart</h3>${stops.length ? `<div class="conteneur-tableau"><table><thead><tr><th>Zone</th><th>Équipement</th><th>Début</th><th>Fin</th><th>Cause</th><th>Durée</th></tr></thead><tbody>${stops.map((s) => `<tr><td>${echapperTexteHtml(s.zone)}</td><td>${echapperTexteHtml(s.equipment || "—")}</td><td>${reglesMetier.formaterHeure(s.start)}</td><td>${reglesMetier.formaterHeure(s.end)}</td><td>${echapperTexteHtml(s.cause)}</td><td>${reglesMetier.formaterDuree(s.minutes)}</td></tr>`).join("")}</tbody></table></div>` : "<p>Aucun arrêt.</p>"}<h3>Groupes électrogènes</h3>${generators}<div class="actions"><button class="secondaire" onclick="this.closest('.fenetre-modale').remove()">Fermer</button></div></section></div>`,
   );
 }
 // afficherSynthese : affiche les lignes calculées par le modèle métier dans le tableau de quart.

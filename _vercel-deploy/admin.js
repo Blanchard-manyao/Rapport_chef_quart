@@ -50,14 +50,14 @@ function exporterRapports() {
     ["Date", "Quart", "Équipe", "Effectif total", "Effectif absent", "Production (colis)", "Tonnage (kg)", "Données complètes (JSON)"],
     rapports.map((rapport) => [rapport.date, rapport.quart, rapport.equipe, rapport.staff?.total,
       ["absent", "malade", "permission", "conge"].reduce((total, cle) => total + nombre(rapport.staff?.[cle]), 0),
-      rapport.production?.paniers, rapport.production?.tonnageKg, JSON.stringify(rapport)]),
+      rapport.production?.paniers, nombre(rapport.production?.tonnageKg) || nombre(rapport.production?.paniers) * KG_PAR_COLIS, JSON.stringify(rapport)]),
   );
 }
 
 function exporterArrets(arrets) {
   exporterXlsx(`arrets_${suffixePeriode()}.xlsx`, "Arrêts",
-    ["Date", "Quart", "Équipe", "Type", "Zone", "Équipement", "Début", "Fin", "Cause", "Durée (minutes)"],
-    arrets.map((arret) => [arret.date, arret.quart, arret.equipe, arret.impact === "equipment" ? "Panne équipement, zone en marche" : "Arrêt de zone", arret.zone, arret.equipment || "", arret.start, arret.end, arret.cause, arret.minutes]),
+    ["Jour", "Quart", "Équipe", "Type", "Zone", "Équipement", "Causes", "Heures", "Durée (minutes)"],
+    arrets.map((arret) => [arret.date, arret.quart, arret.equipe, arret.impact === "equipment" ? "Panne équipement, zone en marche" : "Arrêt de zone", arret.zone, arret.equipment || "", arret.cause || "", `${arret.start || ""}–${arret.end || ""}`, arret.minutes]),
   );
 }
 
@@ -97,6 +97,37 @@ function duree(minutes) {
   return `${Math.floor(n / 60)} h ${String(n % 60).padStart(2, "0")} min`;
 }
 
+function tonnageRapport(rapport) {
+  return nombre(rapport.production?.tonnageKg) || nombre(rapport.production?.paniers) * KG_PAR_COLIS;
+}
+
+function joursFiltresGraphique(rapports) {
+  if (etat.debut || etat.fin) {
+    const dates = rapports.map((rapport) => rapport.date).filter(Boolean).sort();
+    const debut = etat.debut || dates[0], fin = etat.fin || dates.at(-1);
+    if (debut && fin) return Math.floor((Date.parse(`${fin}T00:00:00`) - Date.parse(`${debut}T00:00:00`)) / 86400000) + 1;
+  }
+  if (etat.jour) return 1;
+  const [annee, mois] = etat.mois.split("-").map(Number);
+  return annee && mois ? new Date(annee, mois, 0).getDate() : 1;
+}
+
+function graphiqueComparaisonQuarts(rapports) {
+  const quarts = ["07h-15h", "15h-23h", "23h-07h"];
+  const valeurs = quarts.map((quart) => somme(rapports.filter((rapport) => rapport.quart === quart).map((rapport) => rapport.production?.paniers)));
+  const maximum = Math.max(1, ...valeurs), largeur = 540, hauteur = 260, gauche = 62, droite = 520, haut = 20, bas = 205;
+  const y = (valeur) => bas - valeur / maximum * (bas - haut);
+  const grille = Array.from({ length: 5 }, (_, index) => {
+    const valeur = maximum * index / 4, position = y(valeur);
+    return `<g class="grille-graphique"><line x1="${gauche}" y1="${position}" x2="${droite}" y2="${position}"/><text x="${gauche - 8}" y="${position + 4}" text-anchor="end">${Math.round(valeur).toLocaleString("fr-FR")}</text></g>`;
+  }).join("");
+  const bandes = valeurs.map((valeur, index) => {
+    const x = gauche + 45 + index * 145, hauteurBande = Math.max(0, bas - y(valeur));
+    return `<g><rect x="${x}" y="${y(valeur)}" width="74" height="${hauteurBande}" rx="5" fill="${couleurs[index]}"><title>${quarts[index]} : ${formaterNombre(valeur)} colis</title></rect><text class="date-graphique" x="${x + 37}" y="226" text-anchor="middle">${quarts[index]}</text><text class="date-graphique" x="${x + 37}" y="${Math.max(14, y(valeur) - 7)}" text-anchor="middle">${formaterNombre(valeur)}</text></g>`;
+  }).join("");
+  return `<div class="conteneur-graphique-ligne graphique-bandes"><svg class="graphique-ligne" viewBox="0 0 ${largeur} ${hauteur}" role="img" aria-label="Comparaison de la production entre les trois quarts">${grille}${bandes}</svg></div>`;
+}
+
 function courbeProduction(rapports, mode) {
   const annee = etat.mois.slice(0, 4);
   const rapportsGraphique = mode === "month"
@@ -124,7 +155,7 @@ function courbeProduction(rapports, mode) {
   }).join("");
   const libelles = dates.map((date, index) => `<text class="date-graphique" x="${x(index)}" y="244" text-anchor="middle">${mode === "month" ? new Date(`${date}-01T00:00:00`).toLocaleDateString("fr-FR", { month: "short", year: "2-digit" }) : date.slice(8, 10)}</text>`).join("");
   const legende = equipes.map((equipe) => `<span><i class="couleur-equipe-${equipe.toLowerCase()}"></i>Équipe ${equipe}</span>`).join("");
-  return `<div class="graphique-ligne-avec-legende"><div class="conteneur-graphique-ligne"><svg class="graphique-ligne" viewBox="0 0 ${largeur} ${hauteur}" role="img" aria-label="Évolution de la production par équipe ${mode === "month" ? "par mois" : "par jour"}">${grille}${series}${libelles}</svg></div><div class="legende">${legende}</div></div>`;
+  return `<div class="graphique-ligne-avec-legende"><div class="conteneur-graphique-ligne"><svg class="graphique-ligne" style="min-width:${largeur}px" viewBox="0 0 ${largeur} ${hauteur}" role="img" aria-label="Évolution de la production par équipe ${mode === "month" ? "par mois" : "par jour"}">${grille}${series}${libelles}</svg></div><div class="legende">${legende}</div></div>`;
 }
 
 function afficherTable(rapports) {
@@ -135,6 +166,7 @@ function afficherTableauDeBord() {
   const rapports = filtrerRapports(), arrets = rapports.flatMap(arretsDuRapport);
   const moisDuGraphique = new Set(rapports.map((rapport) => String(rapport.date || "").slice(0, 7)).filter(Boolean));
   const modeGraphique = moisDuGraphique.size > 1 ? "month" : "day";
+  const comparerQuarts = joursFiltresGraphique(rapports) <= 3;
   const production = somme(rapports.map((rapport) => rapport.production?.paniers));
   const tonnageKg = somme(rapports.map((rapport) => nombre(rapport.production?.tonnageKg) || nombre(rapport.production?.paniers) * KG_PAR_COLIS));
   const totauxEquipes = equipes.map((equipe) => somme(rapports.filter((rapport) => rapport.equipe === equipe).map((rapport) => rapport.production?.paniers)));
@@ -157,7 +189,8 @@ function afficherTableauDeBord() {
     etiquettesSecteurs.push(`<text class="etiquette-equipe-camembert" x="${xEtiquette}" y="${yEtiquette}">${equipes[index]}</text>`);
     return `<path d="M50 50 L${x1} ${y1} A50 50 0 ${balayage > 180 ? 1 : 0} 1 ${x2} ${y2} Z" fill="${couleurs[index]}"><title>Équipe ${equipes[index]} · ${formaterNombre(total)} colis</title></path>`;
   }).join("") : '<circle cx="50" cy="50" r="50" fill="#dbe5ef"/>';
-  const zones = zonesArret.map((zone) => ({ nom: zone, minutes: somme(arrets.filter((arret) => arret.zone === zone && arret.impact !== "equipment").map((arret) => arret.minutes)) }));
+  const zones = zonesArret.filter((zone) => zone !== "Séchage").map((zone) => ({ nom: zone, minutes: somme(arrets.filter((arret) => arret.zone === zone && arret.impact !== "equipment").map((arret) => arret.minutes)) }))
+    .concat([1, 2, 3].map((number) => ({ nom: `Séchoir ${number}`, minutes: somme(arrets.filter((arret) => arret.zone === "Séchage" && arret.equipment === `Séchoir ${number}` && arret.impact !== "equipment").map((arret) => arret.minutes)) })));
   const repartition = equipes.map((equipe, index) => {
     const part = totalEquipes ? (totauxEquipes[index] / totalEquipes * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) : "0";
     return `<div class="ligne-zone"><span><i class="point couleur-equipe-${equipe.toLowerCase()}"></i>Équipe ${equipe} · ${part} %</span><b>${formaterNombre(totauxEquipes[index])} colis</b></div>`;
@@ -166,7 +199,7 @@ function afficherTableauDeBord() {
   elements.contenu.innerHTML = `<div class="cartes"><div class="carte"><span>Rapports enregistrés</span><b>${formaterNombre(rapports.length)}</b></div><div class="carte"><span>Nombre de colis</span><b>${formaterNombre(production)}</b></div><div class="carte"><span>Tonnage réalisé</span><b>${formaterNombre(tonnageKg)} kg</b></div></div>
     <div class="grille-deux resume-accueil"><section class="panneau zones-accueil"><h2>Temps d’arrêt par zone</h2><div class="grille-zones">${zones.map(({ nom, minutes }) => `<article class="carte-zone"><span>${echapper(nom)}</span><b>${duree(minutes)}</b></article>`).join("")}</div></section>
     <section class="panneau repartition-accueil"><h2>Répartition de la production par équipe</h2><div class="disposition-camembert"><svg class="camembert" viewBox="0 0 100 100" role="img" aria-label="Répartition de la production entre les équipes">${secteurs}${etiquettesSecteurs.join("")}</svg><div>${repartition}</div></div></section></div>
-    <section class="panneau tendance-accueil"><h2>Évolution de la production par équipe — ${modeGraphique === "month" ? "par mois" : "par jour"}</h2>${courbeProduction(rapports, modeGraphique)}</section>`;
+    <section class="panneau tendance-accueil"><h2>${comparerQuarts ? "Comparaison de la production par quart" : `Évolution de la production par équipe — ${modeGraphique === "month" ? "par mois" : "par jour"}`}</h2>${comparerQuarts ? graphiqueComparaisonQuarts(rapports) : courbeProduction(rapports, modeGraphique)}</section>`;
 }
 
 function afficherRapportsEnregistres() {
@@ -174,26 +207,73 @@ function afficherRapportsEnregistres() {
   const lignes = rapports.map((rapport) => {
     const staff = rapport.staff || {};
     const presents = nombre(staff.total) - ["absent", "malade", "permission", "conge"].reduce((total, cle) => total + nombre(staff[cle]), 0);
-    return `<tr><td>${formaterDate(rapport.date)}</td><td>${echapper(rapport.quart || "—")}</td><td>${echapper(rapport.equipe || "—")}</td><td>${presents}</td><td>${formaterNombre(nombre(rapport.production?.paniers))}</td><td>${formaterNombre(nombre(rapport.production?.tonnageKg))}</td></tr>`;
+    return `<tr><td>${formaterDate(rapport.date)}</td><td>${echapper(rapport.quart || "—")}</td><td>${echapper(rapport.equipe || "—")}</td><td>${presents}</td><td>${formaterNombre(nombre(rapport.production?.paniers))}</td><td>${formaterNombre(tonnageRapport(rapport))}</td><td><button class="bouton secondaire" type="button" data-voir-rapport="${echapper(rapport.id)}">Voir le rapport</button></td></tr>`;
   }).join("");
-  elements.contenu.innerHTML = `<section class="panneau"><div class="entete-tableau"><h2>Rapports enregistrés</h2><button class="bouton secondaire" id="exporterRapports" type="button">Exporter les rapports Excel</button></div><p class="discret">${rapports.length} rapport(s) pour la période sélectionnée.</p><div class="tableau-defilement"><table><thead><tr><th>Date</th><th>Quart</th><th>Équipe</th><th>Effectif présent</th><th>Production</th><th>Tonnage (kg)</th></tr></thead><tbody>${lignes || '<tr><td colspan="6">Aucun rapport enregistré pour cette période.</td></tr>'}</tbody></table></div></section>`;
+  elements.contenu.innerHTML = `<section class="panneau"><div class="entete-tableau"><h2>Rapports enregistrés</h2><button class="bouton secondaire" id="exporterRapports" type="button">Exporter les rapports Excel</button></div><p class="discret">${rapports.length} rapport(s) pour la période sélectionnée.</p><div class="tableau-defilement"><table><thead><tr><th>Date</th><th>Quart</th><th>Équipe</th><th>Effectif présent</th><th>Production</th><th>Tonnage (kg)</th><th>Rapport</th></tr></thead><tbody>${lignes || '<tr><td colspan="7">Aucun rapport enregistré pour cette période.</td></tr>'}</tbody></table></div></section>`;
   document.querySelector("#exporterRapports").onclick = exporterRapports;
+  document.querySelectorAll("[data-voir-rapport]").forEach((button) => {
+    button.onclick = () => ouvrirRapportEnLigne(rapports.find((rapport) => rapport.id === button.dataset.voirRapport));
+  });
+}
+
+function heureEnMinutes(value) {
+  const match = String(value ?? "").trim().match(/^(\d{1,2})\s*[:hH.]\s*(\d{1,2})$/);
+  if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function ouvrirRapportEnLigne(rapport) {
+  if (!rapport) return;
+  document.querySelector(".fenetre-rapport-admin")?.remove();
+  const format = (label, value) => '<div class="ligne-zone"><span>' + echapper(label) + '</span><b>' + echapper(value ?? "—") + '</b></div>';
+  const arrets = arretsDuRapport(rapport);
+  const detailsArrets = arrets.length
+    ? '<div class="tableau-defilement"><table><thead><tr><th>Zone</th><th>Équipement</th><th>Type</th><th>Cause</th><th>Heures</th><th>Durée</th></tr></thead><tbody>' + arrets.map((arret) => {
+      const zone = arret.zone === "Séchage" && arret.equipment ? arret.equipment : arret.zone;
+      return '<tr><td>' + echapper(zone) + '</td><td>' + echapper(arret.equipment || "—") + '</td><td>' + (arret.impact === "equipment" ? "Panne équipement, zone en marche" : "Arrêt de zone") + '</td><td>' + echapper(arret.cause || "—") + '</td><td>' + echapper(arret.start || "—") + "–" + echapper(arret.end || "—") + '</td><td>' + duree(arret.minutes) + '</td></tr>';
+    }).join("") + '</tbody></table></div>'
+    : "<p>Aucun arrêt enregistré.</p>";
+  const groupes = Object.entries(rapport.generators || {}).map(([nom, periodes]) => {
+    const minutes = (periodes || []).reduce((sum, periode) => {
+      const debut = heureEnMinutes(periode.start), fin = heureEnMinutes(periode.end);
+      return sum + (debut === null || fin === null ? 0 : (fin - debut + 1440) % 1440);
+    }, 0);
+    const liste = (periodes || []).map((periode) => echapper(periode.start || "—") + "–" + echapper(periode.end || "—")).join(" · ") || "Aucune période";
+    return '<section><h4>' + echapper(nom) + '</h4><p>Périodes : ' + liste + '</p><p>Temps de fonctionnement : <b>' + duree(minutes) + '</b></p></section>';
+  }).join("");
+  const staff = rapport.staff || {};
+  const presents = nombre(staff.total) - ["absent", "malade", "permission", "conge"].reduce((sum, key) => sum + nombre(staff[key]), 0);
+  const modal = document.createElement("div");
+  modal.className = "fenetre-rapport-admin";
+  modal.innerHTML = '<section class="rapport-admin-fiche panneau" role="dialog" aria-modal="true" aria-label="Rapport de quart">' +
+    '<header><div><h2>Rapport de quart</h2><p>' + formaterDate(rapport.date) + ' · ' + echapper(rapport.quart) + ' · Équipe ' + echapper(rapport.equipe) + '</p></div><button class="bouton secondaire" type="button" data-fermer-rapport>Fermer</button></header>' +
+    '<section><h3>Effectif</h3><div class="grille-zones">' + format("Total", staff.total) + format("Présents", presents) + format("Absents", staff.absent) + format("Malades", staff.malade) + format("Permissions", staff.permission) + format("Congés", staff.conge) + format("Accidents", staff.accidents) + '</div></section>' +
+    '<section><h3>Prélavage</h3><div class="grille-zones">' + format("Box 1", rapport.prelavage?.box) + format("Godets", rapport.prelavage?.buckets) + format("Tour de bennes", rapport.prelavage?.tourBennes) + format("Box 2", rapport.prelavage?.secondBox) + format("Godets box 2", rapport.prelavage?.secondBuckets) + '</div></section>' +
+    '<section><h3>Granulation</h3><div class="grille-zones">' + format("Box usinage", rapport.granulation?.box) + format("Titre acide (g/l)", rapport.granulation?.acidTitre) + format("Consommation acide (kg)", rapport.granulation?.acidConsumption) + format("Paniers granulés", rapport.granulation?.baskets) + format("Paniers lavés", rapport.granulation?.basketsWashed) + '</div></section>' +
+    '<section><h3>Séchage et production</h3><div class="grille-zones">' + format("Paniers séchés", rapport.drying?.basketsDry) + format("Production (colis)", rapport.production?.paniers) + format("Tonnage réalisé", formaterNombre(tonnageRapport(rapport)) + " kg") + format("Balles début / quart / traitées / fin", [rapport.production?.balesStart, rapport.production?.balesquart, rapport.production?.balesProcessed, rapport.production?.balesEnd].join(" / ")) + '</div>' +
+    (rapport.drying?.sechoirs || []).map((sechoir) => '<p>Séchoir ' + echapper(sechoir.number) + ' · Cycle ' + echapper(sechoir.cycle) + ' s · Brûleurs ' + echapper(sechoir.bruleur1) + ' / ' + echapper(sechoir.bruleur2) + ' · Compteur ' + echapper(sechoir.counter || "—") + ' · Gaz ' + echapper(sechoir.gas1 || "—") + ' / ' + echapper(sechoir.gas2 || "—") + '</p>').join("") + '</section>' +
+    '<section><h3>Arrêts du quart</h3>' + detailsArrets + '</section><section><h3>Groupes électrogènes</h3>' + (groupes || "<p>Aucun groupe électrogène enregistré.</p>") + '</section></section>';
+  modal.querySelector("[data-fermer-rapport]").onclick = () => modal.remove();
+  modal.addEventListener("click", (event) => { if (event.target === modal) modal.remove(); });
+  document.body.append(modal);
 }
 
 function afficherTempsArret() {
   const arrets = filtrerRapports().flatMap((rapport) => arretsDuRapport(rapport).map((arret) => ({
     ...arret, date: rapport.date, quart: rapport.quart, equipe: rapport.equipe,
   }))).sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.quart).localeCompare(String(b.quart)) || String(a.equipe).localeCompare(String(b.equipe)));
-  const totaux = zonesArret.map((zone) => ({ zone, minutes: somme(arrets.filter((arret) => arret.zone === zone && arret.impact !== "equipment").map((arret) => arret.minutes)) }));
+  const totaux = zonesArret.filter((zone) => zone !== "Séchage").map((zone) => ({ zone, minutes: somme(arrets.filter((arret) => arret.zone === zone && arret.impact !== "equipment").map((arret) => arret.minutes)) }))
+    .concat([1, 2, 3].map((number) => ({ zone: `Séchoir ${number}`, minutes: somme(arrets.filter((arret) => arret.zone === "Séchage" && arret.equipment === `Séchoir ${number}` && arret.impact !== "equipment").map((arret) => arret.minutes)) })));
   const cartes = totaux.map(({ zone, minutes }) => `<article class="carte-zone"><span>${echapper(zone)}</span><b>${duree(minutes)}</b></article>`).join("");
   const totauxEquipements = Object.entries(arrets.reduce((totaux, arret) => { if (arret.impact !== "equipment") return totaux; const cle = `${arret.zone} — ${arret.equipment || "Équipement non précisé"}`; totaux[cle] = (totaux[cle] || 0) + arret.minutes; return totaux; }, {}));
   const cartesEquipements = totauxEquipements.length ? totauxEquipements.map(([nom, minutes]) => `<article class="carte-zone"><span>${echapper(nom)} · panne sans arrêt de zone</span><b>${duree(minutes)}</b></article>`).join("") : '<p class="discret">Aucune panne d’équipement sans arrêt de zone pour cette période.</p>';
   const lignes = arrets.map((arret, index) => {
     const precedent = arrets[index - 1];
     const separation = !precedent || precedent.date !== arret.date ? "separation-jour" : precedent.quart !== arret.quart ? "separation-quart" : "";
-    return `<tr class="${separation}"><td>${formaterDate(arret.date)}</td><td>${echapper(arret.quart || "—")}</td><td>${echapper(arret.equipe || "—")}</td><td>${arret.impact === "equipment" ? "Panne équipement, zone en marche" : "Arrêt de zone"}</td><td>${echapper(arret.zone || "—")}</td><td>${echapper(arret.equipment || "—")}</td><td>${echapper(arret.start || "—")}–${echapper(arret.end || "—")}</td><td>${echapper(arret.cause || "—")}</td><td>${duree(arret.minutes)}</td></tr>`;
+    const zoneAffichee = arret.zone === "Séchage" && /^Séchoir [123]$/i.test(arret.equipment || "") ? arret.equipment : arret.zone;
+    return `<tr class="${separation}"><td>${formaterDate(arret.date)}</td><td>${echapper(arret.quart || "—")}</td><td>${echapper(arret.equipe || "—")}</td><td>${arret.impact === "equipment" ? "Panne équipement, zone en marche" : "Arrêt de zone"}</td><td>${echapper(zoneAffichee || "—")}</td><td>${echapper(arret.equipment || "—")}</td><td>${echapper(arret.cause || "—")}</td><td>${echapper(arret.start || "—")}–${echapper(arret.end || "—")}</td><td>${duree(arret.minutes)}</td></tr>`;
   }).join("");
-  elements.contenu.innerHTML = `<section class="panneau resume-arrets"><div class="entete-tableau"><h2>Temps d’arrêt des zones</h2><button class="bouton secondaire" id="exporterArrets" type="button">Exporter les arrêts Excel</button></div><div class="grille-zones">${cartes}</div></section><section class="panneau resume-arrets"><h2>Pannes d’équipement — zone en marche</h2><div class="grille-zones">${cartesEquipements}</div></section><section class="panneau details-arrets"><h2>Détail par jour et quart — un arrêt distinct par ligne</h2><div class="tableau-defilement"><table><thead><tr><th>Jour</th><th>Quart</th><th>Équipe</th><th>Type</th><th>Zone</th><th>Équipement</th><th>Heures</th><th>Cause</th><th>Durée</th></tr></thead><tbody>${lignes || '<tr><td colspan="9">Aucun arrêt enregistré pour cette période.</td></tr>'}</tbody></table></div></section>`;
+  elements.contenu.innerHTML = `<section class="panneau resume-arrets"><div class="entete-tableau"><h2>Temps d’arrêt des zones et séchoirs</h2><button class="bouton secondaire" id="exporterArrets" type="button">Exporter les arrêts Excel</button></div><div class="grille-zones">${cartes}</div></section><section class="panneau resume-arrets"><h2>Pannes d’équipement — zone en marche</h2><div class="grille-zones">${cartesEquipements}</div></section><section class="panneau details-arrets"><h2>Détail par jour et quart — un arrêt distinct par ligne</h2><div class="tableau-defilement"><table><thead><tr><th>Jour</th><th>Quart</th><th>Équipe</th><th>Type</th><th>Zone</th><th>Équipement</th><th>Causes</th><th>Heures</th><th>Durée</th></tr></thead><tbody>${lignes || '<tr><td colspan="9">Aucun arrêt enregistré pour cette période.</td></tr>'}</tbody></table></div></section>`;
   document.querySelector("#exporterArrets").onclick = () => exporterArrets(arrets);
 }
 

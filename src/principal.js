@@ -400,6 +400,7 @@ function heureEnMinutes(value) {
 }
 // Vérifie les heures côté serveur, y compris les arrêts de nuit après minuit.
 function validerPlagesHorairesRapport(report) {
+  const debutQuart = { "07h-15h": 420, "15h-23h": 900, "23h-07h": 1380 }[report.quart];
   const intervals = [
     ...(report.stops || []).map((stop) => ({
       ...stop,
@@ -431,6 +432,11 @@ function validerPlagesHorairesRapport(report) {
         `La fin doit suivre le début pour ${interval.label}. Seul le quart 23h-07h peut passer minuit.`,
       );
     const duration = (end - start + 1440) % 1440;
+    const offsetDebut = debutQuart === undefined ? -1 : (start - debutQuart + 1440) % 1440;
+    let offsetFin = debutQuart === undefined ? -1 : (end - debutQuart + 1440) % 1440;
+    if (offsetFin <= offsetDebut) offsetFin += 1440;
+    if (offsetDebut < 0 || offsetDebut >= 480 || offsetFin > 480)
+      throw new Error(`Les heures doivent être comprises dans le quart ${report.quart} pour ${interval.label}.`);
     if (duration > 480)
       throw new Error(`La durée ne peut pas dépasser 8 heures pour ${interval.label}.`);
   }
@@ -566,11 +572,13 @@ ipcMain.handle("auth", (_, { user, password, confirmation, recoveryKey }) => {
   if (attempt.until > Date.now())
     return {
       ok: false,
+      remainingAttempts: 0,
       message: `Trop de tentatives. Réessayez après ${new Date(attempt.until).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}.`,
     };
   if (rapportExistant.lockedUntil > Date.now())
     return {
       ok: false,
+      remainingAttempts: 0,
       message: `Trop de tentatives. Réessayez après ${new Date(rapportExistant.lockedUntil).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}.`,
     };
   const checked = verifierMotDePasse(rapportExistant, password);
@@ -592,6 +600,7 @@ ipcMain.handle("auth", (_, { user, password, confirmation, recoveryKey }) => {
     consignerEvenement("INFO", `Échec de connexion (${user})`);
     return {
       ok: false,
+      remainingAttempts: attempt.until || rapportExistant.lockedUntil ? 0 : Math.max(0, 5 - attempt.count),
       message:
         attempt.until || rapportExistant.lockedUntil
           ? "Trop de tentatives. Réessayez dans 15 minutes."
