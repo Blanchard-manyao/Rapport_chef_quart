@@ -381,17 +381,7 @@ tr:hover td {
   align-self: center;
 }
 .resume-arrets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 22px;
-  padding: 9px 12px;
-  color: #214a6d;
-  background: #eaf4fb;
-  border-radius: 7px;
-  font-weight: 700;
-}
-.resume-arrets span {
-  color: #326044;
+  margin: 0;
 }
 .liste-arrets {
   margin: 8px 0;
@@ -1239,10 +1229,18 @@ body {
 .contenu:has(.details-arrets) { overflow-x: hidden; overflow-y: auto; }
 .details-arrets .conteneur-tableau { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: auto; }
 .resume-arrets .grille-zones { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+#vue:has(.details-arrets) { display: flex; flex-direction: column; gap: 14px; }
+#vue:has(.details-arrets) .resume-arrets h2,
+#vue:has(.details-arrets) .details-arrets h2 { margin: 0; }
+#vue:has(.details-arrets) .details-arrets { margin: 0; }
+#vue:has(.details-arrets) .entete-tableau { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 14px; }
+#vue:has(.details-arrets) .resume-arrets .carte-zone span { color: #52677d; }
+#vue:has(.details-arrets) .resume-arrets .grille-zones { align-items: stretch; }
 .graphique-ligne.graphique-bandes { min-width: 650px; height: 290px; }
 .courbe-sommets-barres { fill: none; stroke: #173653; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
 .point-sommet-barre { fill: #fff; stroke: #173653; stroke-width: 2; pointer-events: none; }
 .separateur-jour-graphique { stroke: #7b8fa3; stroke-width: 2; stroke-dasharray: 4 4; }
 .legende-courbe i { width: 20px; height: 0; border-top: 3px solid #173653; border-radius: 0; vertical-align: middle; }
-@media (max-width: 1000px) { .resume-arrets .grille-zones { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 820px) { .resume-arrets .grille-zones { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 560px) { .resume-arrets .grille-zones { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 560px) { #vue:has(.details-arrets) .entete-tableau { align-items: flex-start; flex-direction: column; } }
