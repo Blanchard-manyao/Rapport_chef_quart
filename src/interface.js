@@ -657,24 +657,34 @@ function courbeProduction(reports, mode = "day") {
   return `<div class="graphique-ligne-avec-legende"><div class="conteneur-graphique-ligne"><svg class="graphique-ligne" style="min-width:${width}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="Évolution de la production par équipe ${mode === "month" ? "par mois" : "par jour"}">${grid}${objectif}${series}${labels}</svg></div><div class="legende">${legend}</div></div>`;
 }
 function graphiqueComparaisonQuarts(reports) {
-  const quarts = reglesMetier.QUARTS;
-  const dates = [...new Set(reports.map(r => r.date).filter(Boolean))].sort();
-  const donnees = dates.flatMap(date => quarts.flatMap(quart => Object.keys(reglesMetier.EQUIPES).map(equipe => ({ date, quart, equipe, valeur: calculerSomme(reports.filter(r => r.date === date && r.quart === quart && r.equipe === equipe).map(r => r.production?.paniers)) })).filter(x => x.valeur > 0)));
+  const equipes = Object.keys(reglesMetier.EQUIPES), quarts = ["23h-07h", "07h-15h", "15h-23h"];
+  const rapportsDates = [...new Set(reports.map(r => r.date).filter(Boolean))].sort();
+  let dates = rapportsDates;
+  if (etatInterface.debutPeriode || etatInterface.finPeriode) {
+    const debut = etatInterface.debutPeriode || rapportsDates[0], fin = etatInterface.finPeriode || rapportsDates.at(-1);
+    const duree = debut && fin ? Math.floor((Date.parse(`${fin}T00:00:00`) - Date.parse(`${debut}T00:00:00`)) / 86400000) + 1 : 0;
+    if (duree > 0 && duree <= 3) dates = Array.from({ length: duree }, (_, i) => new Date(Date.parse(`${debut}T00:00:00`) + i*86400000).toISOString().slice(0,10));
+  } else if (etatInterface.jour) dates = [`${etatInterface.mois}-${etatInterface.jour}`];
+  const donnees = dates.flatMap(date => quarts.flatMap(quart => equipes.map(equipe => ({ date, quart, equipe, valeur: calculerSomme(reports.filter(r => r.date === date && r.quart === quart && r.equipe === equipe).map(r => r.production?.paniers)) })).filter(x => x.valeur > 0)));
   const maximum = Math.max(1, etatInterface.objectifProduction, ...donnees.map(x => x.valeur));
   const largeur = Math.max(650, dates.length * 250), hauteur = 290, gauche = 62, droite = largeur - 18, haut = 24, bas = 220;
-  const y = (valeur) => bas - valeur / maximum * (bas - haut);
-  const grille = Array.from({ length: 5 }, (_, index) => {
-    const valeur = maximum * index / 4, position = y(valeur);
-    return `<g class="grille-graphique"><line x1="${gauche}" y1="${position}" x2="${droite}" y2="${position}"/><text x="${gauche - 8}" y="${position + 4}" text-anchor="end">${Math.round(valeur).toLocaleString("fr-FR")}</text></g>`;
+  const y = valeur => bas - valeur / maximum * (bas - haut);
+  const grille = Array.from({ length: 5 }, (_, i) => { const valeur = maximum*i/4, position = y(valeur); return `<g class="grille-graphique"><line x1="${gauche}" y1="${position}" x2="${droite}" y2="${position}"/><text x="${gauche-8}" y="${position+4}" text-anchor="end">${Math.round(valeur).toLocaleString("fr-FR")}</text></g>`; }).join("");
+  const groupes = dates.flatMap((date, di) => quarts.map((quart, qi) => ({ date, di, quart, qi }))), pas = (droite-gauche)/groupes.length, points = [];
+  const bandes = groupes.map(g => {
+    const groupe = donnees.filter(d => d.date === g.date && d.quart === g.quart), bw = Math.max(6, Math.min(26, (pas-8)/Math.max(1,groupe.length)-3));
+    const bars = groupe.map((d,j) => {
+      const x=gauche+g.di*3*pas+g.qi*pas+pas/2+(j-(groupe.length-1)/2)*(bw+3)-bw/2, cx=x+bw/2, top=y(d.valeur); points.push([cx,top]);
+      return `<g><rect x="${x}" y="${top}" width="${bw}" height="${bas-top}" rx="3" fill="${["#2563eb","#f59e0b","#ff2c2c","#16a34a"][equipes.indexOf(d.equipe)]}"><title>${formaterDate(d.date)} · ${d.quart} · Équipe ${d.equipe} : ${d.valeur.toLocaleString("fr-FR")} colis</title></rect>${bas-top>18 ? `<text class="code-equipe-bande" x="${cx}" y="${Math.min(bas-4,top+14)}" text-anchor="middle">${d.equipe}</text>` : ""}</g>`;
+    }).join("");
+    const separateur = g.qi===2 && g.di<dates.length-1 ? `<line class="separateur-jour-graphique" x1="${gauche+(g.di+1)*3*pas}" y1="${haut-8}" x2="${gauche+(g.di+1)*3*pas}" y2="${bas+40}"/>` : "";
+    return `${bars}${separateur}<text class="date-graphique" x="${gauche+g.di*3*pas+g.qi*pas+pas/2}" y="239" text-anchor="middle">${g.quart}</text>${g.qi===1 ? `<text class="date-graphique" x="${gauche+g.di*3*pas+1.5*pas}" y="257" text-anchor="middle">${formaterDate(g.date)}</text>` : ""}`;
   }).join("");
-  const groupes = dates.flatMap((date, di) => quarts.map((quart, qi) => ({ date, di, quart, qi }))), pas = (droite - gauche) / groupes.length;
-  const bandes = groupes.map(g => { const groupe = donnees.filter(d => d.date === g.date && d.quart === g.quart), bw = Math.max(6, Math.min(26, (pas - 8) / Math.max(1, groupe.length) - 3));
-    const bars = groupe.map((d, j) => { const x = gauche + g.di*3*pas + g.qi*pas + pas/2 + (j-(groupe.length-1)/2)*(bw+3)-bw/2; return `<g><rect x="${x}" y="${y(d.valeur)}" width="${bw}" height="${bas-y(d.valeur)}" rx="3" fill="${["#2563eb", "#f59e0b", "#ff2c2c", "#16a34a"][Object.keys(reglesMetier.EQUIPES).indexOf(d.equipe)]}"><title>${formaterDate(d.date)} · ${d.quart} · Équipe ${d.equipe} : ${d.valeur.toLocaleString("fr-FR")} colis</title></rect>${bas-y(d.valeur)>18 ? `<text class="code-equipe-bande" x="${x+bw/2}" y="${Math.min(bas-4,y(d.valeur)+14)}" text-anchor="middle">${d.equipe}</text>` : ""}</g>`; }).join("");
-    return `${bars}<text class="date-graphique" x="${gauche+g.di*3*pas+g.qi*pas+pas/2}" y="239" text-anchor="middle">${g.quart}</text>${g.qi===1 ? `<text class="date-graphique" x="${gauche+g.di*3*pas+1.5*pas}" y="257" text-anchor="middle">${formaterDate(g.date)}</text>` : ""}`;
-  }).join("");
-  const objectif = etatInterface.objectifProduction > 0 ? `<line class="ligne-objectif" x1="${gauche}" y1="${y(etatInterface.objectifProduction)}" x2="${droite}" y2="${y(etatInterface.objectifProduction)}"/><text class="etiquette-objectif" x="${droite-2}" y="${y(etatInterface.objectifProduction)-5}" text-anchor="end">Objectif ${etatInterface.objectifProduction.toLocaleString("fr-FR")}</text>` : "";
-  const legend = Object.keys(reglesMetier.EQUIPES).map((e, i) => `<span><i style="background:${["#2563eb", "#f59e0b", "#ff2c2c", "#16a34a"][i]}"></i>Équipe ${e}</span>`).join("");
-  return `<div class="graphique-ligne-avec-legende"><div class="conteneur-graphique-ligne"><svg class="graphique-ligne graphique-bandes" style="min-width:${largeur}px" viewBox="0 0 ${largeur} ${hauteur}" role="img" aria-label="Production par quart et par équipe">${grille}${objectif}${bandes}<text class="date-graphique" transform="translate(16 ${(haut+bas)/2}) rotate(-90)" text-anchor="middle">Production (colis)</text><text class="date-graphique" x="${(gauche+droite)/2}" y="282" text-anchor="middle">Jour · Quart · Équipe</text></svg></div><div class="legende">${legend}</div></div>`;
+  const trace = points.length>1 ? `M${points[0][0]},${points[0][1]} ${points.slice(1).map(([x,yy],i)=>{ const [px,py]=points[i],mid=(px+x)/2; return `C${mid},${py} ${mid},${yy} ${x},${yy}`; }).join(" ")}` : "";
+  const courbe = trace ? `<path class="courbe-sommets-barres" d="${trace}"/>${points.map(([x,yy])=>`<circle class="point-sommet-barre" cx="${x}" cy="${yy}" r="3.5"/>`).join("")}` : "";
+  const objectif = etatInterface.objectifProduction>0 ? `<line class="ligne-objectif" x1="${gauche}" y1="${y(etatInterface.objectifProduction)}" x2="${droite}" y2="${y(etatInterface.objectifProduction)}"/><text class="etiquette-objectif" x="${droite-2}" y="${y(etatInterface.objectifProduction)-5}" text-anchor="end">Objectif ${etatInterface.objectifProduction.toLocaleString("fr-FR")}</text>` : "";
+  const legend = equipes.map((e,i)=>`<span><i style="background:${["#2563eb","#f59e0b","#ff2c2c","#16a34a"][i]}"></i>Équipe ${e}</span>`).join("");
+  return `<div class="graphique-ligne-avec-legende"><div class="conteneur-graphique-ligne"><svg class="graphique-ligne graphique-bandes" style="min-width:${largeur}px" viewBox="0 0 ${largeur} ${hauteur}" role="img" aria-label="Production par quart et par équipe">${grille}${objectif}${bandes}${courbe}<text class="date-graphique" transform="translate(16 ${(haut+bas)/2}) rotate(-90)" text-anchor="middle">Production (colis)</text><text class="date-graphique" x="${(gauche+droite)/2}" y="282" text-anchor="middle">Jour · Quart · Équipe</text></svg></div><div class="legende">${legend}<span class="legende-courbe"><i></i>Progression des barres</span></div></div>`;
 }
 function joursFiltresGraphique(reports) {
   if (etatInterface.debutPeriode || etatInterface.finPeriode) {

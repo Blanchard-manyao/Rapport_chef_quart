@@ -1234,3 +1234,15 @@ body {
   .contexte-formulaire .champ select {
     flex: 1;
   }
+.principal:has(.details-arrets) > .entete { position: sticky; top: 0; z-index: 10; }
+.principal { overflow-x: hidden; }
+.contenu:has(.details-arrets) { overflow-x: hidden; overflow-y: auto; }
+.details-arrets .conteneur-tableau { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: auto; }
+.resume-arrets .grille-zones { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.graphique-ligne.graphique-bandes { min-width: 650px; height: 290px; }
+.courbe-sommets-barres { fill: none; stroke: #173653; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.point-sommet-barre { fill: #fff; stroke: #173653; stroke-width: 2; pointer-events: none; }
+.separateur-jour-graphique { stroke: #7b8fa3; stroke-width: 2; stroke-dasharray: 4 4; }
+.legende-courbe i { width: 20px; height: 0; border-top: 3px solid #173653; border-radius: 0; vertical-align: middle; }
+@media (max-width: 1000px) { .resume-arrets .grille-zones { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .resume-arrets .grille-zones { grid-template-columns: minmax(0, 1fr); } }

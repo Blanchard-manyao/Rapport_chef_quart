@@ -60,10 +60,15 @@ input:focus, select:focus { outline: 3px solid #2a7eb333; border-color: #2871a9;
 .graphique-ligne-avec-legende { display: flex; flex-direction: column; gap: 10px; }
 .conteneur-graphique-ligne { min-width: 0; overflow-x: auto; }
 .graphique-ligne { display: block; width: 100%; min-width: 700px; height: 245px; overflow: visible; }
+.graphique-ligne.graphique-bandes { height: 290px; }
 .grille-graphique line { stroke: #e2e8f0; }
 .grille-graphique text, .date-graphique { fill: #66798c; font: 11px "Segoe UI", Arial, sans-serif; }
 .date-graphique, .legende { font-weight: 700; }
 .code-equipe-bande { fill: #fff; font: 700 10px "Segoe UI", Arial, sans-serif; pointer-events: none; }
+.courbe-sommets-barres { fill: none; stroke: #173653; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.point-sommet-barre { fill: #fff; stroke: #173653; stroke-width: 2; pointer-events: none; }
+.separateur-jour-graphique { stroke: #7b8fa3; stroke-width: 2; stroke-dasharray: 4 4; }
+.legende-courbe i { width: 20px; height: 0; border-top: 3px solid #173653; border-radius: 0; vertical-align: middle; }
 .serie-graphique path { fill: none; stroke-width: 3; }
 .serie-graphique circle { stroke: #fff; stroke-width: 1.5; }
 .legende { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 9px 18px; padding-top: 0; font-size: 13px; }
@@ -73,6 +78,7 @@ input:focus, select:focus { outline: 3px solid #2a7eb333; border-color: #2871a9;
 .tableau-defilement { overflow-x: auto; }
 .tableau-defilement { width: 100%; max-width: 100%; }
 .details-arrets .tableau-defilement { max-height: min(62dvh, 720px); overflow: auto; }
+.resume-arrets .grille-zones { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .details-arrets table { min-width: 900px; }
 .details-arrets thead th { position: sticky; top: 0; z-index: 2; background: #fff; }
 .ligne-objectif { stroke: #b42318; stroke-width: 2; stroke-dasharray: 7 5; }
@@ -134,5 +140,12 @@ body.connecte footer { display: none; }
 .contenu-dashboard:has(.cartes) .conteneur-graphique-ligne { min-height: 0; flex: 1; overflow: auto; }
 .contenu-dashboard:has(.cartes) .graphique-ligne { min-width: 0; height: 100%; }
 .graphique-bandes .graphique-ligne { min-width: 540px; height: 260px; }
+.contenu-dashboard:has(.cartes) .graphique-ligne.graphique-bandes { height: 290px; }
 @media (max-width: 1000px) { .entete-dashboard { align-items: flex-start; flex-wrap: wrap; } .entete-dashboard .barre-filtres { flex-wrap: wrap; border-left: 0; padding: 0; } }
 @media (max-width: 760px) { body.connecte { overflow: auto; } body.connecte .page { height: auto; min-height: 100vh; } .coquille { height: auto; grid-template-columns: 1fr; } .barre-laterale { min-height: 0; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 10px; } .usine { flex: 1 1 100%; margin: 4px 8px 8px; } .barre-laterale button { flex: 1 1 145px; text-align: center; } .barre-laterale .deconnexion { margin-top: 0; } .principal { height: auto; min-height: calc(100vh - 130px); } .entete-dashboard { padding: 12px 14px; } .entete-dashboard .barre-filtres { justify-content: flex-start; } .contenu-dashboard { min-height: 65vh; } .contenu-dashboard:has(.cartes) > .resume-accueil { grid-template-columns: 1fr; } .contenu-dashboard:has(.cartes) .zones-accueil .grille-zones { flex: 0 0 auto; } .entete-dashboard .filtre-periode { flex-wrap: wrap; } }
+.principal:has(.details-arrets) > .entete-dashboard { position: sticky; top: 0; z-index: 10; }
+.contenu-dashboard > * { min-width: 0; max-width: 100%; }
+.details-arrets .tableau-defilement { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: auto; }
+@media (max-width: 820px) { .resume-arrets .grille-zones { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .resume-arrets .grille-zones { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1200px) { .entete-dashboard { align-items: flex-start; flex-wrap: wrap; } .entete-dashboard .barre-filtres { flex-wrap: wrap; border-left: 0; padding: 0; justify-content: flex-start; } }
