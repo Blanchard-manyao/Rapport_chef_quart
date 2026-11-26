@@ -37,7 +37,7 @@ button.alerte {
 .coquille {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 230px 1fr;
+  grid-template-columns: 230px minmax(0, 1fr);
 }
 .barre-laterale {
   background: #163553;
@@ -310,7 +310,7 @@ tr:hover td {
     flex-wrap: wrap;
   }
   .coquille {
-    grid-template-columns: 180px 1fr;
+    grid-template-columns: 180px minmax(0, 1fr);
   }
   .grille-deux,
   .cartes,
@@ -1225,10 +1225,12 @@ body {
     flex: 1;
   }
 .principal:has(.details-arrets) > .entete { position: sticky; top: 0; z-index: 10; }
-.principal { overflow-x: hidden; }
-.contenu:has(.details-arrets) { overflow-x: hidden; overflow-y: auto; }
-.details-arrets .conteneur-tableau { width: 100%; max-width: 100%; overflow-x: auto; overflow-y: auto; }
+.principal { min-width: 0; max-width: 100%; overflow-x: hidden; }
+.contenu:has(.details-arrets) { width: 100%; min-width: 0; max-width: none; margin: 0; overflow-x: hidden; overflow-y: auto; }
+.details-arrets .conteneur-tableau { width: 100%; min-width: 0; max-width: 100%; overflow-x: auto; overflow-y: auto; }
 .resume-arrets .grille-zones { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+#vue:has(.details-arrets) .resume-arrets { width: 100%; min-width: 0; max-width: 100%; }
+#vue:has(.details-arrets) .resume-arrets .grille-zones { width: 100%; min-width: 0; max-width: 100%; }
 #vue:has(.details-arrets) { display: flex; flex-direction: column; gap: 14px; }
 #vue:has(.details-arrets) .resume-arrets h2,
 #vue:has(.details-arrets) .details-arrets h2 { margin: 0; }
