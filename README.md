@@ -27,15 +27,9 @@ L’installateur NSIS et le ZIP portable se trouvent dans `dist`. Pour les recon
 
 ## Comptes et sécurité
 
-Au premier lancement, notez la clé de récupération affichée. Elle est requise pour initialiser le compte administrateur et peut réinitialiser les mots de passe d’équipe. Elle n’est pas affichée dans le formulaire de connexion. Le premier accès de chaque équipe initialise son mot de passe. Après cinq échecs, la connexion est bloquée pendant 15 minutes. Les mots de passe sont hachés avec un sel aléatoire et PBKDF2.
+Au premier lancement, notez la clé de récupération affichée. Elle est requise pour initialiser le compte administrateur et peut réinitialiser les mots de passe d’équipe. Elle n’est pas affichée dans le formulaire de connexion. Le premier accès de chaque équipe initialise son mot de passe. Les mots de passe sont hachés avec un sel aléatoire et PBKDF2.
 
 Les données locales sont chiffrées par Windows via Electron `safeStorage` lorsqu’il est disponible. Une sauvegarde quotidienne est conservée avec une rétention de 30 fichiers. Les rapports et l’historique ne sont pas supprimés par l’application.
-
-## Import de l’ancienne base C#
-
-Au premier accès administrateur, l’application détecte et importe automatiquement `C:\ProgramData\RapportQuart\rapports_quart.db` (ou le dossier défini par `RAPPORT_QUART_DONNEES`). L’import lit les fichiers SQLite en clair et les bases SQLCipher de l’ancien programme (avec `cle.dat`, déchiffré par DPAPI Windows). Il importe les rapports, les relevés séchoirs, les arrêts, les générateurs et les mots de passe des équipes. Les rapports ayant le même identifiant sont ignorés ; la base source n’est jamais modifiée.
-
-Les données sont conservées dans le dossier utilisateur d’Electron. Les exports de rapports et de temps d’arrêt sont des fichiers `.xlsx`.
 
 ## Base de données JavaScript
 

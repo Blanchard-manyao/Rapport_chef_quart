@@ -291,6 +291,39 @@ tr:hover td {
   max-height: 85vh;
   overflow: auto;
 }
+.champ-mot-de-passe {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.champ-mot-de-passe input {
+  width: 100%;
+  padding-right: 46px;
+}
+.bouton-visibilite-mot-de-passe {
+  position: absolute;
+  right: 4px;
+  display: grid;
+  width: 36px;
+  min-height: 36px;
+  place-items: center;
+  padding: 6px;
+  border: 0;
+  background: transparent;
+  color: #163553;
+}
+.bouton-visibilite-mot-de-passe:hover {
+  background: #e8eef4;
+}
+.bouton-visibilite-mot-de-passe svg {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 @media (max-width: 1000px) {
   .entete {
     flex: 0 0 auto;
@@ -366,7 +399,21 @@ tr:hover td {
 .ligne-arret [data-arret="impact"] { grid-area: impact; min-width: 0; }
 .ligne-arret [data-arret="debut"] { grid-area: debut; }
 .ligne-arret [data-arret="fin"] { grid-area: fin; }
-.ligne-arret [data-arret="cause"] { grid-area: cause; }
+.ligne-arret .champ-cause-arret { grid-area: cause; }
+.champ-cause-arret {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 5px;
+  min-width: 0;
+}
+.champ-cause-arret input { width: 100%; min-width: 0; }
+.champ-cause-arret select {
+  width: 40px;
+  min-height: 40px;
+  padding: 4px;
+  text-align: center;
+  font-weight: 700;
+}
 .ligne-arret [data-duree-arret] { grid-area: duration; }
 .ligne-arret .supprimer-arret { grid-area: delete; }
 .ligne-arret input,
@@ -741,7 +788,14 @@ body {
 }
 .graphique-bandes .graphique-ligne { min-width: 540px; height: 260px; }
 .details-arrets table { min-width: 900px; }
-.rapport-lecture-seule { width: min(1000px, 94vw); max-height: 92dvh; overflow: auto; }
+.rapport-lecture-seule { width: min(760px, 92vw); max-height: min(84dvh, 760px); overflow: auto; }
+#arretsHistorique .conteneur-tableau,
+#arretsRapport .conteneur-tableau {
+  width: 100%;
+  max-width: 100%;
+  max-height: min(32dvh, 280px);
+  overflow: auto;
+}
 .ligne-rapport,
 .ligne-rapport td {
   cursor: pointer;

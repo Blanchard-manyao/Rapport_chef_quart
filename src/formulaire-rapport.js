@@ -24,8 +24,23 @@
     return creerChamp(intitule, chemin, valeur, "number", `min="${minimum}" max="${maximum}" step="1"`);
   }
 
-  function identifiantSuggestion(zone) {
-    return `suggestion-${String(zone || "Autre").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  function causesSuggerees(zone) {
+    const defaults = [
+      "Panne mécanique",
+      "Panne électrique",
+      "Manque de matière",
+      "Nettoyage",
+      "Problème d’énergie",
+    ];
+    const seen = new Set();
+    return [...(window.suggestionsArret?.[zone] || []), ...defaults]
+      .map((cause) => String(cause || "").trim())
+      .filter((cause) => {
+        const key = cause.toLocaleLowerCase("fr-FR");
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
   }
 
   function ligneArret(arret = {}, zoneFixe = arret.zone || "Autre") {
@@ -39,7 +54,10 @@
       </select>
       <input data-arret="debut" aria-label="Heure de début de l’arrêt" placeholder="Début · 07H30" maxlength="5" inputmode="numeric" autocomplete="off" value="${echapperTexteHtml(reglesMetier.formaterHeure(arret.start) || arret.start || "")}">
       <input data-arret="fin" aria-label="Heure de fin de l’arrêt" placeholder="Fin · 08H15" maxlength="5" inputmode="numeric" autocomplete="off" value="${echapperTexteHtml(reglesMetier.formaterHeure(arret.end) || arret.end || "")}">
-      <input data-arret="cause" aria-label="Cause de l’arrêt" placeholder="Cause de l’arrêt" value="${echapperTexteHtml(arret.cause || "")}" list="${identifiantSuggestion(zone)}">
+      <div class="champ-cause-arret">
+        <input data-arret="cause" aria-label="Cause de l’arrêt" placeholder="Cause de l’arrêt" value="${echapperTexteHtml(arret.cause || "")}">
+        <select data-suggestion-cause aria-label="Choisir une cause suggérée" title="Choisir une cause suggérée"><option value="">▾</option>${causesSuggerees(zone).map((cause) => `<option value="${echapperTexteHtml(cause)}">${echapperTexteHtml(cause)}</option>`).join("")}</select>
+      </div>
       <output class="duree-arret" data-duree-arret>Durée : —</output>
       <button type="button" class="alerte supprimer-arret" aria-label="Supprimer cet arrêt">×</button>
     </div>`;
@@ -189,20 +207,6 @@
       },
     ];
 
-    const suggestionLists = reglesMetier.ZONES_ARRET.map((zone) => {
-      const defaults = [
-        "Panne mécanique",
-        "Panne électrique",
-        "Manque de matière",
-        "Nettoyage",
-        "Problème d’énergie",
-      ];
-      const suggestions = [...(window.suggestionsArret?.[zone] || []), ...defaults].filter(
-        (item, index, all) => all.indexOf(item) === index,
-      );
-      return `<datalist id="${identifiantSuggestion(zone)}">${suggestions.map((item) => `<option>${echapperTexteHtml(item)}</option>`).join("")}</datalist>`;
-    }).join("");
-
     document.body.insertAdjacentHTML(
       "beforeend",
       `<div class="fenetre-modale fenetre-rapport"><section class="panneau editeur-rapport">
@@ -226,7 +230,6 @@
               <p id="etatCopieRapport" class="discret" aria-live="polite"></p>
             </aside>
           </div>
-          ${suggestionLists}
           <div class="actions actions-rapport">
             <button type="button" id="enregistrerRapport">${rapportExistant ? "Enregistrer les modifications" : "Enregistrer le rapport"}</button>
             <button type="button" class="secondaire annuler">Fermer</button>
@@ -313,6 +316,14 @@
         actualiserApercu();
       }
       if (event.target.matches(".annuler")) confirmerFermetureRapport();
+    });
+    modal.addEventListener("change", (event) => {
+      if (!event.target.matches("[data-suggestion-cause]") || !event.target.value) return;
+      const cause = event.target.closest(".champ-cause-arret")?.querySelector('[data-arret="cause"]');
+      if (!cause) return;
+      cause.value = event.target.value;
+      event.target.value = "";
+      cause.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
     // Demande confirmation avant de perdre une saisie non enregistrée.

@@ -6,7 +6,6 @@ contextBridge.exposeInMainWorld("rapportQuart", {
   activerApplication: () => ipcRenderer.invoke("focus-app"),
   confirmerCleRecuperation: () => ipcRenderer.invoke("ack-recovery"),
   reinitialiserMotDePasseEquipe: (x) => ipcRenderer.invoke("reset-equipe-password", x),
-  importerAncienneBase: (x) => ipcRenderer.invoke("import-legacy-db", x),
   capturerSynthese: (r) => ipcRenderer.invoke("capture-synthesis", r),
   ouvrirDossierCaptures: () => ipcRenderer.invoke("open-captures"),
   enregistrerRapport: (x) => ipcRenderer.invoke("save-report", x),

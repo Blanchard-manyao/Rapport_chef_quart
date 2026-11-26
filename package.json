@@ -11,11 +11,9 @@
   "dependencies": {
     "@7mind.io/sqlcipher-wasm": "^1.4.0",
     "@primno/dpapi": "^2.0.1",
-    "sql.js": "^1.13.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@neondatabase/serverless": "^1.2.1",
     "electron": "^34.0.0",
     "electron-builder": "^25.1.8"
   },

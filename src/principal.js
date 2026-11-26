@@ -33,12 +33,8 @@ const cheminAncienFichierDonnees = () => chemins.join(applicationElectron.getPat
 const cheminIdentifiantsPortail = () => chemins.join(applicationElectron.getPath("userData"), "identifiants-portail.dat");
 const cheminVirtuelSqlite = "/rapport-cq.db";
 const entropieSqlCipher = Buffer.from("RapportQuart.Cle.v1", "utf8");
-const ancienneBaseDeDonnees = () =>
-  chemins.join(
-    process.env.RAPPORT_QUART_DONNEES ||
-      chemins.join(process.env.ProgramData || "C:\\ProgramData", "RapportQuart"),
-    "rapports_quart.db",
-  );
+const parametresApplication = ["recoveryKey", "recoveryAcknowledged", "syncPendingScopes", "causesArret"];
+const champsDonneesApplication = new Set(["users", "reports", ...parametresApplication]);
 function consignerEvenement(level, message) {
   try {
     const dir = applicationElectron.getPath("userData"),
@@ -129,7 +125,7 @@ function lireOuCreerCleBase(anciennesDonnees) {
   return key;
 }
 function lireEtatBase() {
-  const result = { users: {}, reports: [], loginAttempts: {} };
+  const result = { users: {}, reports: [] };
   for (const row of baseSqlite.query("SELECT username, password_json FROM users"))
     result.users[row.username] = JSON.parse(row.password_json);
   for (const row of baseSqlite.query("SELECT report_id, report_date, quart, equipe, staff_total, staff_absent, production_paniers, baskets_dry, tonnage_kg, payload_json FROM reports ORDER BY report_date, quart, equipe")) {
@@ -148,13 +144,9 @@ function lireEtatBase() {
     report.drying.basketsDry = Number(row.baskets_dry) || 0;
     result.reports.push(report);
   }
-  for (const row of baseSqlite.query("SELECT username, attempts, locked_until FROM login_attempts"))
-    result.loginAttempts[row.username] = {
-      count: Number(row.attempts) || 0,
-      until: Number(row.locked_until) || 0,
-    };
   for (const row of baseSqlite.query("SELECT setting, value_json FROM app_settings"))
-    result[row.setting] = JSON.parse(row.value_json);
+    if (parametresApplication.includes(row.setting))
+      result[row.setting] = JSON.parse(row.value_json);
   return result;
 }
 function normaliserRapport(report) {
@@ -214,7 +206,7 @@ function ecrireEtatBase() {
   if (!baseSqlite) throw new Error("La base SQLCipher n’est pas ouverte.");
   baseSqlite.exec("BEGIN IMMEDIATE TRANSACTION");
   try {
-    baseSqlite.exec("DELETE FROM users; DELETE FROM reports; DELETE FROM login_attempts; DELETE FROM app_settings");
+    baseSqlite.exec("DELETE FROM users; DELETE FROM reports; DELETE FROM app_settings");
     for (const [username, password] of Object.entries(donnees.users || {}))
       baseSqlite.query("INSERT INTO users (username, password_json) VALUES (?, ?)", [username, JSON.stringify(password)]);
     for (const report of donnees.reports || [])
@@ -233,9 +225,7 @@ function ecrireEtatBase() {
           JSON.stringify(report),
         ],
       );
-    for (const [username, attempt] of Object.entries(donnees.loginAttempts || {}))
-      baseSqlite.query("INSERT INTO login_attempts (username, attempts, locked_until) VALUES (?, ?, ?)", [username, Number(attempt.count) || 0, Number(attempt.until) || 0]);
-    for (const setting of ["recoveryKey", "recoveryAcknowledged", "legacyConnected", "syncPendingScopes", "causesArret"])
+    for (const setting of parametresApplication)
       if (donnees[setting] !== undefined)
         baseSqlite.query("INSERT INTO app_settings (setting, value_json) VALUES (?, ?)", [setting, JSON.stringify(donnees[setting])]);
     baseSqlite.exec("COMMIT");
@@ -281,30 +271,44 @@ async function chargerBase() {
       tonnage_kg REAL,
       payload_json TEXT NOT NULL
     );
-    CREATE TABLE IF NOT EXISTS login_attempts (
-      username TEXT PRIMARY KEY,
-      attempts INTEGER NOT NULL DEFAULT 0,
-      locked_until INTEGER NOT NULL DEFAULT 0
-    );
     CREATE TABLE IF NOT EXISTS app_settings (
       setting TEXT PRIMARY KEY,
       value_json TEXT NOT NULL
     );
   `);
-  const schemaModifie = migrerColonnesRapports();
+  const tentativesTablePresente = baseSqlite.query(
+    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'login_attempts'",
+  ).length > 0;
+  if (tentativesTablePresente) baseSqlite.exec("DROP TABLE login_attempts");
+  const parametresObsoletesPresents = baseSqlite.query(
+    "SELECT 1 FROM app_settings WHERE setting NOT IN ('recoveryKey', 'recoveryAcknowledged', 'syncPendingScopes', 'causesArret') LIMIT 1",
+  ).length > 0;
+  if (parametresObsoletesPresents)
+    baseSqlite.exec("DELETE FROM app_settings WHERE setting NOT IN ('recoveryKey', 'recoveryAcknowledged', 'syncPendingScopes', 'causesArret')");
+  const colonnesRapportsModifiees = migrerColonnesRapports();
+  const schemaModifie = colonnesRapportsModifiees || tentativesTablePresente || parametresObsoletesPresents;
   donnees = databaseExisted
     ? lireEtatBase()
     : anciennesDonnees || {
         users: {},
         reports: [],
-        loginAttempts: {},
-        // Une base neuve reste vide au premier lancement ; l'import ancien
-        // pourra toujours être lancé explicitement par l'administrateur.
-        legacyConnected: true,
       };
   donnees.users ||= {};
   donnees.reports = (donnees.reports || []).map(normaliserRapport);
-  donnees.loginAttempts ||= {};
+  let nettoyageDonneesObsoletes = false;
+  for (const field of Object.keys(donnees))
+    if (!champsDonneesApplication.has(field)) {
+      delete donnees[field];
+      nettoyageDonneesObsoletes = true;
+    }
+  for (const user of Object.values(donnees.users)) {
+    if (!user || typeof user !== "object") continue;
+    if (Object.hasOwn(user, "failures") || Object.hasOwn(user, "lockedUntil")) {
+      delete user.failures;
+      delete user.lockedUntil;
+      nettoyageDonneesObsoletes = true;
+    }
+  }
   donnees.syncPendingScopes = Array.isArray(donnees.syncPendingScopes) ? donnees.syncPendingScopes : [];
   donnees.causesArret = donnees.causesArret && typeof donnees.causesArret === "object" ? donnees.causesArret : {};
   const causesImportees = fusionnerCausesRapports(donnees.reports);
@@ -315,6 +319,7 @@ async function chargerBase() {
   if (
     schemaModifie ||
     !databaseExisted ||
+    nettoyageDonneesObsoletes ||
     causesImportees ||
     !baseSqlite.query("SELECT 1 FROM app_settings WHERE setting = 'recoveryKey'").length
   )
@@ -452,8 +457,6 @@ function creerMotDePasse(p) {
     salt: salt.toString("hex"),
     hash: cryptographie.pbkdf2Sync(p, salt, 200000, 32, "sha256").toString("hex"),
     iterations: 200000,
-    failures: 0,
-    lockedUntil: 0,
   };
 }
 function verifierMotDePasse(stored, p) {
@@ -507,8 +510,7 @@ function sauvegarderChaqueJour() {
 ipcMain.handle("bootstrap", () => {
   // Chaque actualisation relit les changements enregistrés par les autres fenêtres.
   actualiserDonneesPartagees();
-  const admin = utilisateurActif === "Administrateur",
-    logged = !!utilisateurActif;
+  const logged = !!utilisateurActif;
   return {
     users: Object.keys(donnees.users),
     equipes: {
@@ -522,8 +524,6 @@ ipcMain.handle("bootstrap", () => {
     adminSet: !!donnees.users.Administrateur,
     recoveryKey: donnees.recoveryAcknowledged ? null : donnees.recoveryKey,
     recoveryKeyForSetup: donnees.users.Administrateur ? null : donnees.recoveryKey,
-    legacyAvailable: admin && fichiers.existsSync(ancienneBaseDeDonnees()),
-    legacyConnected: !!donnees.legacyConnected,
   };
 });
 ipcMain.handle("ack-recovery", () => {
@@ -582,51 +582,12 @@ ipcMain.handle("auth", async (_, { user, password, confirmation, recoveryKey }) 
     consignerEvenement("INFO", `Initialisation et connexion autorisées (${user})`);
     return { ok: true, first: true, user };
   }
-  const attempt = donnees.loginAttempts[user] || { count: 0, until: 0 };
-  if (attempt.until > Date.now())
-    return {
-      ok: false,
-      remainingAttempts: 0,
-      message: `Trop de tentatives. Réessayez après ${new Date(attempt.until).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}.`,
-    };
-  if (rapportExistant.lockedUntil > Date.now())
-    return {
-      ok: false,
-      remainingAttempts: 0,
-      message: `Trop de tentatives. Réessayez après ${new Date(rapportExistant.lockedUntil).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}.`,
-    };
   const checked = await verifierMotDePasseAsynchrone(rapportExistant, password);
   if (!checked.ok) {
-    attempt.count++;
-    if (typeof rapportExistant === "object") {
-      rapportExistant.failures = (rapportExistant.failures || 0) + 1;
-      if (rapportExistant.failures >= 5) {
-        rapportExistant.lockedUntil = Date.now() + 15 * 60 * 1000;
-        rapportExistant.failures = 0;
-      }
-    }
-    if (attempt.count >= 5) {
-      attempt.count = 0;
-      attempt.until = Date.now() + 15 * 60 * 1000;
-    }
-    donnees.loginAttempts[user] = attempt;
-    sauvegarderBase();
     consignerEvenement("INFO", `Échec de connexion (${user})`);
-    return {
-      ok: false,
-      remainingAttempts: attempt.until || rapportExistant.lockedUntil ? 0 : Math.max(0, 5 - attempt.count),
-      message:
-        attempt.until || rapportExistant.lockedUntil
-          ? "Trop de tentatives. Réessayez dans 15 minutes."
-          : "Mot de passe incorrect.",
-    };
+    return { ok: false, message: "Mot de passe incorrect, veuillez réessayer." };
   }
   if (checked.upgrade) donnees.users[user] = creerMotDePasse(password);
-  if (typeof donnees.users[user] === "object") {
-    donnees.users[user].failures = 0;
-    donnees.users[user].lockedUntil = 0;
-  }
-  donnees.loginAttempts[user] = { count: 0, until: 0 };
   utilisateurActif = user;
   consignerEvenement("INFO", `Connexion autorisée (${user})`);
   return { ok: true, user };
@@ -653,7 +614,6 @@ ipcMain.handle(
     )
       throw new Error("Le mot de passe doit contenir de 6 à 64 caractères.");
     donnees.users[user] = creerMotDePasse(next);
-    donnees.loginAttempts[user] = { count: 0, until: 0 };
     sauvegarderBase();
     return true;
   },
@@ -747,292 +707,6 @@ ipcMain.handle("open-captures", async () => {
       : chemins.join(root, `Equipe-${utilisateurActif}`);
   fichiers.mkdirSync(dir, { recursive: true });
   return shell.openPath(dir);
-});
-ipcMain.handle("import-legacy-db", async (_, options = {}) => {
-  if (utilisateurActif !== "Administrateur")
-    throw new Error("Import réservé à l’administrateur.");
-  const automatic = options?.automatic === true;
-  if (automatic && donnees.legacyConnected && !options?.force)
-    return { imported: 0, alreadyConnected: true };
-  const fixedPath = ancienneBaseDeDonnees();
-  if (automatic && !fichiers.existsSync(fixedPath))
-    throw new Error(`Ancienne base introuvable : ${fixedPath}`);
-  const picked = automatic
-    ? { canceled: false, filePaths: [fixedPath] }
-    : await dialog.showOpenDialog(fenetrePrincipale, {
-        defaultPath: fichiers.existsSync(fixedPath) ? fixedPath : undefined,
-        properties: ["openFile"],
-        filters: [
-          { name: "Base SQLite", extensions: ["db", "sqlite", "sqlite3"] },
-        ],
-      });
-  if (picked.canceled || !picked.filePaths[0]) return false;
-  const bytes = fichiers.readFileSync(picked.filePaths[0]);
-  let legacy, table, hasTable, sqlRows;
-  const sqliteHeader = Buffer.from("SQLite format 3\0");
-  if (bytes.subarray(0, sqliteHeader.length).equals(sqliteHeader)) {
-    try {
-      const SQL = await require("sql.js")({
-        locateFile: (n) =>
-          chemins.join(chemins.dirname(require.resolve("sql.js")), n),
-      });
-      legacy = new SQL.Database(bytes);
-      sqlRows = (sql) => {
-        const q = legacy.exec(sql)[0];
-        return q
-          ? q.values.map((values) =>
-              Object.fromEntries(q.columns.map((c, i) => [c, values[i]])),
-            )
-          : [];
-      };
-      table = (name) => {
-        try {
-          return sqlRows(`SELECT * FROM "${name}"`);
-        } catch {
-          return [];
-        }
-      };
-      hasTable = (name) =>
-        sqlRows(
-          `SELECT name FROM sqlite_master WHERE type='table' AND name='${name}'`,
-        ).length > 0;
-    } catch {
-      throw new Error("La sauvegarde SQLite est illisible ou endommagée.");
-    }
-  } else {
-    let keyFile = [
-      process.env.RAPPORT_QUART_DONNEES &&
-        chemins.join(process.env.RAPPORT_QUART_DONNEES, "cle.dat"),
-      chemins.join(
-        process.env.ProgramData || "C:\\ProgramData",
-        "RapportQuart",
-        "cle.dat",
-      ),
-      chemins.join(chemins.dirname(picked.filePaths[0]), "cle.dat"),
-    ].find((p) => p && fichiers.existsSync(p));
-    if (!keyFile) {
-      const keyPick = await dialog.showOpenDialog(fenetrePrincipale, {
-        properties: ["openFile"],
-        filters: [
-          { name: "Clé de chiffrement C# (cle.dat)", extensions: ["dat"] },
-        ],
-      });
-      if (keyPick.canceled || !keyPick.filePaths[0])
-        throw new Error(
-          "La base est chiffrée. Sélectionnez le fichier cle.dat de l’installation C# pour la déverrouiller.",
-        );
-      keyFile = keyPick.filePaths[0];
-    }
-    let key;
-    try {
-      const { Dpapi, isPlatformSupported } = require("@primno/dpapi");
-      if (!isPlatformSupported) throw new Error("DPAPI Windows indisponible");
-      key = Buffer.from(
-        Dpapi.unprotectData(
-          fichiers.readFileSync(keyFile),
-          Buffer.from("RapportQuart.Cle.v1", "utf8"),
-          "LocalMachine",
-        ),
-      ).toString("utf8");
-    } catch {
-      throw new Error(
-        "Impossible de lire la clé DPAPI. Utilisez le fichier cle.dat de cette installation Windows.",
-      );
-    }
-    try {
-      const { initSQLite } = require("@7mind.io/sqlcipher-wasm");
-      const sqlite = await initSQLite(),
-        module = sqlite.getModule(),
-        virtualPath = "/rapport-cq-legacy.db";
-      module.FS.writeFile(virtualPath, bytes);
-      legacy = sqlite.open(virtualPath, key);
-      legacy.query("SELECT count(*) AS n FROM sqlite_master");
-      sqlRows = (sql, params = []) => legacy.query(sql, params);
-      table = (name) => {
-        try {
-          if (!hasTable(name)) return [];
-          return sqlRows(`SELECT * FROM "${name}"`);
-        } catch {
-          return [];
-        }
-      };
-      hasTable = (name) =>
-        sqlRows(
-          "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-          [name],
-        ).length > 0;
-    } catch {
-      throw new Error(
-        "Déverrouillage SQLCipher impossible : clé incorrecte, paramètres de chiffrement incompatibles ou fichier endommagé. La base originale n’a pas été modifiée.",
-      );
-    } finally {
-      key = "";
-    }
-  }
-  const reports = table("rapport"),
-    sechoirs = table("sechoir_releve"),
-    stops = table("arret"),
-    gens = table("generateur_marche");
-  if (!hasTable("rapport")) {
-    legacy.close();
-    throw new Error("Aucune table de rapports trouvée dans cette sauvegarde.");
-  }
-  const num = (v, d = 0) =>
-      v == null || v === "" ? d : Number.isFinite(Number(v)) ? Number(v) : d,
-    time = (v) => {
-      const m = String(v || "").match(/^(\d{1,2})[:hH.](\d{2})/);
-      return m ? `${m[1].padStart(2, "0")}H${m[2]}` : String(v || "");
-    };
-  let imported = 0;
-  const sechoirById = new Map();
-  sechoirs.forEach((x) => {
-    const a = sechoirById.get(x.rapport_id) || [];
-    a.push({
-      number: num(x.sechoir),
-      cycle: num(x.cycle_sec),
-      bruleur1: num(x.bruleur1),
-      bruleur2: num(x.bruleur2),
-      counter: x.compteur || "",
-      gas1: x.gaz || "",
-      gas2: x.gaz2 || "",
-      stops: [],
-    });
-    sechoirById.set(x.rapport_id, a);
-  });
-  const stopById = new Map();
-  stops.forEach((x) => {
-    const a = stopById.get(x.rapport_id) || [];
-    a.push({
-      zone: x.zone || "Autre",
-      start: time(x.heure_debut),
-      end: time(x.heure_fin),
-      cause: x.cause || "",
-    });
-    stopById.set(x.rapport_id, a);
-  });
-  const genById = new Map();
-  gens.forEach((x) => {
-    const a = genById.get(x.rapport_id) || {};
-    (a[x.generateur] ||= []).push({
-      start: time(x.heure_demarrage),
-      end: time(x.heure_arret),
-    });
-    genById.set(x.rapport_id, a);
-  });
-  for (const x of reports) {
-    const id = x.id || `${x.date}_${x.quart}_${x.equipe}`;
-    if (donnees.reports.some((r) => r.id === id)) continue;
-    const ds = sechoirById.get(id) || [];
-    for (const n of [1, 2, 3])
-      if (!ds.some((d) => d.number === n))
-        ds.push({
-          number: n,
-          cycle: 0,
-          bruleur1: 0,
-          bruleur2: 0,
-          counter: "",
-          gas1: "",
-          gas2: "",
-          stops: [],
-        });
-    const all = stopById.get(id) || [],
-      mainStops = [];
-    for (const s of all) {
-      const m = s.zone.match(/^Séchoir\s*([123])$/i),
-        d = m && ds.find((y) => y.number === Number(m[1]));
-      if (d) d.stops.push(s);
-      else mainStops.push(s);
-    }
-    const paniers = num(x.production),
-      r = {
-        id,
-        date: String(x.date || ""),
-        quart: x.quart || "",
-        equipe: x.equipe || "",
-        staff: {
-          total: num(x.effectif_total),
-          absent: num(x.absent),
-          malade: num(x.malade),
-          permission: num(x.permission),
-          conge: num(x.conge),
-          accidents: num(x.accident),
-        },
-        prelavage: {
-          box: x.box_prelave || "",
-          buckets: num(x.godets),
-          secondBox: x.box_prelave2 || "",
-          secondBuckets: num(x.godets2),
-        },
-        granulation: {
-          box: x.box_usinage || "",
-          acidTitre: num(x.titre_acide),
-          acidConsumption: num(x.conso_acide),
-          baskets: num(x.paniers_granules ?? x.paniers),
-          basketAdvance: x.avance_panier || "",
-          basketsWashed: x.panier_lave || "",
-        },
-        drying: { basketsDry: num(x.paniers_seches), sechoirs: ds },
-        production: {
-          paniers,
-          tonnageKg: num(x.kg, paniers * 1260),
-          balesStart: num(x.balles_debut),
-          balesquart: num(x.balles_quart),
-          balesProcessed: num(x.balles_traitees),
-          balesEnd: num(x.balles_fin),
-        },
-        generators: genById.get(id) || { "GE 2500 KVA": [], "GE 2000 KVA": [] },
-        stops: mainStops,
-        createdAt: x.cree_le
-          ? new Date(x.cree_le).toISOString()
-          : new Date().toISOString(),
-        updatedAt: x.cree_le
-          ? new Date(x.cree_le).toISOString()
-          : new Date().toISOString(),
-      };
-    donnees.reports.push(r);
-    imported++;
-  }
-  const safeSql = (sql) => {
-    try {
-      return sqlRows(sql);
-    } catch {
-      return [];
-    }
-  };
-  for (const x of safeSql(
-    "SELECT code, hex(sel) AS sel_hex, hex(hash) AS hash_hex, iterations, echecs, bloque_jusqua FROM equipe_acces",
-  )) {
-    if (!donnees.users[x.code] && x.sel_hex && x.hash_hex)
-      donnees.users[x.code] = {
-        salt: x.sel_hex.toLowerCase(),
-        hash: x.hash_hex.toLowerCase(),
-        iterations: num(x.iterations, 200000),
-        failures: num(x.echecs),
-        lockedUntil: x.bloque_jusqua ? Date.parse(x.bloque_jusqua) || 0 : 0,
-      };
-  }
-  const adminAccess = safeSql(
-    "SELECT hex(sel) AS sel_hex, hex(hash) AS hash_hex, iterations, echecs, bloque_jusqua FROM administrateur_acces WHERE id=1",
-  )[0];
-  if (
-    !donnees.users.Administrateur &&
-    adminAccess?.sel_hex &&
-    adminAccess?.hash_hex
-  )
-    donnees.users.Administrateur = {
-      salt: adminAccess.sel_hex.toLowerCase(),
-      hash: adminAccess.hash_hex.toLowerCase(),
-      iterations: num(adminAccess.iterations, 200000),
-      failures: num(adminAccess.echecs),
-      lockedUntil: adminAccess.bloque_jusqua
-        ? Date.parse(adminAccess.bloque_jusqua) || 0
-        : 0,
-    };
-  legacy.close();
-  if (automatic) donnees.legacyConnected = true;
-  sauvegarderBase();
-  consignerEvenement("INFO", `${imported} rapport(s) importé(s) depuis une sauvegarde C#`);
-  return { imported };
 });
 ipcMain.handle("save-report", (_, report) => {
   if (!utilisateurActif) throw new Error("La session a expiré. Reconnectez-vous.");

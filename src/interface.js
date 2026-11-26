@@ -11,9 +11,6 @@ const etatInterface = {
   jour: "",
   debutPeriode: "",
   finPeriode: "",
-  ancienneBaseDisponible: false,
-  ancienneBaseConnectee: false,
-  questionAncienneBaseAffichee: false,
   minuteurActualisation: null,
   synchronisationEnCours: false,
   versionSession: 0,
@@ -97,8 +94,6 @@ async function rechargerDonnees(versionAttendue = etatInterface.versionSession) 
   etatInterface.administrateurInitialise = x.adminSet;
   etatInterface.cleRecuperation = x.recoveryKey;
   etatInterface.cleInitialisationAdministrateur = x.recoveryKeyForSetup;
-  etatInterface.ancienneBaseDisponible = x.legacyAvailable;
-  etatInterface.ancienneBaseConnectee = x.legacyConnected;
   return true;
 }
 let actualisationEnCours = false;
@@ -131,7 +126,7 @@ function afficherConnexion(refocaliserApresConnexion = false) {
         </select>
       </label>
       <label class="champ">Mot de passe
-        <input name="motDePasse" type="password" required maxlength="64" autocomplete="current-password">
+        <span class="champ-mot-de-passe"><input name="motDePasse" type="password" required maxlength="64" autocomplete="current-password"><button type="button" id="visibiliteMotDePasse" class="bouton-visibilite-mot-de-passe" aria-label="Afficher le mot de passe" aria-pressed="false" title="Afficher le mot de passe"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle></svg></button></span>
         <span class="erreur-champ" id="messageConnexion" aria-live="polite"></span>
       </label>
       <label class="champ" id="conteneurConfirmation">Confirmer le mot de passe
@@ -145,6 +140,19 @@ function afficherConnexion(refocaliserApresConnexion = false) {
   </main>`;
   const form = selectionner("#formulaireConnexion"),
     profil = form.elements.profil;
+  const motDePasse = form.elements.motDePasse,
+    boutonVisibilite = selectionner("#visibiliteMotDePasse", form);
+  boutonVisibilite.onclick = () => {
+    const visible = motDePasse.type === "password";
+    motDePasse.type = visible ? "text" : "password";
+    boutonVisibilite.setAttribute("aria-pressed", String(visible));
+    boutonVisibilite.setAttribute(
+      "aria-label",
+      visible ? "Masquer le mot de passe" : "Afficher le mot de passe",
+    );
+    boutonVisibilite.title = visible ? "Masquer le mot de passe" : "Afficher le mot de passe";
+    motDePasse.focus({ preventScroll: true });
+  };
   const mode = () => {
     const admin = profil.value === "Administrateur",
       exists = etatInterface.utilisateurs.includes(profil.value);
@@ -204,10 +212,7 @@ function afficherConnexion(refocaliserApresConnexion = false) {
       return;
     }
     if (!res.ok) {
-      const remaining = Number.isInteger(res.remainingAttempts)
-        ? ` Tentatives restantes : ${res.remainingAttempts} sur 5.`
-        : "";
-      selectionner("#messageConnexion").textContent = `${res.message}${remaining}`;
+      selectionner("#messageConnexion").textContent = res.message;
       submitButton.disabled = false;
       submitButton.textContent = "Se connecter";
       return;
@@ -233,26 +238,6 @@ function afficherConnexion(refocaliserApresConnexion = false) {
     afficherEcran();
     afficherNotification(res.first ? "Mot de passe initialisé." : "Connexion établie.");
     synchroniserEnAttente(false);
-    if (
-      etatInterface.administrateur &&
-      etatInterface.ancienneBaseDisponible &&
-      !etatInterface.ancienneBaseConnectee &&
-      !etatInterface.questionAncienneBaseAffichee
-    ) {
-      etatInterface.questionAncienneBaseAffichee = true;
-      try {
-        const result = await rapportQuart.importerAncienneBase({ automatic: true });
-        if (result) {
-          await rechargerDonnees();
-          afficherEcran();
-          afficherNotification(
-            `${result.imported} rapport(s) importé(s) depuis l’ancienne base.`,
-          );
-        }
-      } catch (error) {
-        alert(`Import de l’ancienne base impossible : ${error.message}`);
-      }
-    }
   };
   selectionner("#motDePasseOublie").onclick = () => dialogueReinitialisationMotDePasse(profil.value);
 }
@@ -913,13 +898,14 @@ function afficherActionsContextuelles(id, x, y) {
     0,
   );
 }
-function afficherArrets(id, target = "reportStops") {
+function afficherArrets(id, target = "arretsRapport") {
   const r = etatInterface.rapports.find((x) => x.id === id);
   if (!r) return;
   const stops = arretsDuRapport(r);
   etatInterface.identifiantRapportArretsSelectionne = id;
   etatInterface.cibleArretsSelectionnee = target;
   const box = selectionner(`#${target}`);
+  if (!box) return;
   if (!stops.length) {
     box.innerHTML = "<p>Aucun arrêt enregistré pour ce rapport.</p>";
     return;
