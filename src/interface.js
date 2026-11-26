@@ -19,6 +19,7 @@ const etatInterface = {
   versionSession: 0,
   identifiantRapportArretsSelectionne: null,
   cibleArretsSelectionnee: null,
+  objectifProduction: Number(localStorage.getItem("rapport-cq-production-objective")) || 0,
 };
 const selectionner = (s, root = document) => root.querySelector(s),
   echapperTexteHtml = (s) =>
@@ -35,6 +36,18 @@ const selectionner = (s, root = document) => root.querySelector(s),
     );
 const formaterDate = (x) =>
   x ? new Date(x + "T00:00:00").toLocaleDateString("fr-FR") : "";
+const dateVersFr = (iso) => iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "";
+function lireDateFr(valeur) {
+  const match = String(valeur || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return "";
+  const iso = `${match[3]}-${match[2]}-${match[1]}`;
+  const date = new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
+  return date.getFullYear() === Number(match[3]) && date.getMonth() === Number(match[2]) - 1 && date.getDate() === Number(match[1]) ? iso : "";
+}
+function formaterSaisieDate(valeur) {
+  const chiffres = String(valeur || "").replace(/\D/g, "").slice(0, 8);
+  return chiffres.length > 4 ? `${chiffres.slice(0, 2)}/${chiffres.slice(2, 4)}/${chiffres.slice(4)}` : chiffres.length > 2 ? `${chiffres.slice(0, 2)}/${chiffres.slice(2)}` : chiffres;
+}
 // jetonFiltreDate : traduit le filtre de dates en suffixe lisible pour le fichier exporté.
 function jetonFiltreDate(datePrecise = "") {
   const compact = (date) => String(date || "").replaceAll("-", "");
@@ -131,11 +144,11 @@ function afficherConnexion(refocaliserApresConnexion = false) {
       </label>
       <label class="champ">Mot de passe
         <input name="motDePasse" type="password" required maxlength="64" autocomplete="current-password">
+        <span class="erreur-champ" id="messageConnexion" aria-live="polite"></span>
       </label>
       <label class="champ" id="conteneurConfirmation">Confirmer le mot de passe
         <input name="confirmation" type="password" maxlength="64" autocomplete="new-password">
       </label>
-      <p class="discret" id="messageConnexion"></p>
       <div class="actions actions-connexion">
         <button type="submit">Se connecter</button>
         <button type="button" id="motDePasseOublie" class="secondaire">Mot de passe oublié ?</button>
@@ -186,6 +199,7 @@ function afficherConnexion(refocaliserApresConnexion = false) {
     const sessionVersion = ++etatInterface.versionSession;
     const submitButton = form.querySelector('button[type="submit"]');
     submitButton.disabled = true;
+    submitButton.textContent = "Connexion…";
     const f = new FormData(form);
     let res;
     try {
@@ -198,6 +212,7 @@ function afficherConnexion(refocaliserApresConnexion = false) {
     } catch (error) {
       selectionner("#messageConnexion").textContent = `Connexion impossible : ${error.message}`;
       submitButton.disabled = false;
+      submitButton.textContent = "Se connecter";
       return;
     }
     if (!res.ok) {
@@ -206,6 +221,7 @@ function afficherConnexion(refocaliserApresConnexion = false) {
         : "";
       selectionner("#messageConnexion").textContent = `${res.message}${remaining}`;
       submitButton.disabled = false;
+      submitButton.textContent = "Se connecter";
       return;
     }
     etatInterface.utilisateur = res.user;
@@ -309,7 +325,7 @@ function afficherStructureApplication() {
     ? ""
     : '<button id="changerEquipe" class="secondaire">Changer d’équipe</button>';
   const peutSynchroniser = etatInterface.administrateur || ["A", "B", "C", "D"].includes(etatInterface.utilisateur);
-  return `<div class="coquille"><aside class="barre-laterale"><div class="usine">EXAT Missehi<br><small>Rapport de quart</small></div>${etatInterface.administrateur ? '<button id="configurerSynchronisation" class="secondaire">Configurer l’accès au portail</button>' : ""}${peutSynchroniser ? '<button id="synchroniserRapports" class="bouton-synchronisation">⇧ Synchroniser les rapports</button>' : ""}${tabs.map(([k, t]) => `<button data-onglet="${k}" class="${etatInterface.onglet === k ? "actif" : ""}">${t}</button>`).join("")}${equipeActions}<button id="motDePasse" class="secondaire">Changer le mot de passe</button><button id="deconnexion" class="deconnexion">Déconnexion</button></aside><section class="principal"><header class="entete"><h1>${titles[etatInterface.onglet]}</h1>${
+  return `<div class="coquille"><aside class="barre-laterale"><div class="usine">EXAT Missehi<br><small>Rapport de quart</small></div><button id="deconnexion" class="deconnexion">Déconnexion</button>${etatInterface.administrateur ? '<button id="configurerSynchronisation" class="secondaire">Configurer l’accès au portail</button>' : ""}${peutSynchroniser ? '<button id="synchroniserRapports" class="bouton-synchronisation">⇧ Synchroniser les rapports</button>' : ""}${tabs.map(([k, t]) => `<button data-onglet="${k}" class="${etatInterface.onglet === k ? "actif" : ""}">${t}</button>`).join("")}${equipeActions}<button id="motDePasse" class="secondaire">Changer le mot de passe</button></aside><section class="principal"><header class="entete"><h1>${titles[etatInterface.onglet]}</h1>${
     showFilters
       ? `<div class="filtres"><label>Mois <input id="mois" type="month" value="${etatInterface.mois}" ${rangeActive ? "disabled" : ""}></label><label>Jour <select id="jour" ${rangeActive ? "disabled" : ""}><option value="">Tous les jours</option>${Array.from(
           { length: count },
@@ -321,7 +337,7 @@ function afficherStructureApplication() {
           )
           .join(
             "",
-          )}</select></label>${etatInterface.administrateur ? `<fieldset class="filtre-periode"><legend>Période</legend><label>Du <input id="debutPeriode" type="date" value="${etatInterface.debutPeriode}"></label><label>Au <input id="finPeriode" type="date" value="${etatInterface.finPeriode}"></label>${rangeActive ? '<button type="button" id="effacerPeriode" class="secondaire">Effacer</button>' : ""}</fieldset>` : ""}<button id="actualiser" class="secondaire">Actualiser</button></div>`
+          )}</select></label>${etatInterface.administrateur ? `<fieldset class="filtre-periode"><legend>Période</legend><label>Du <input id="debutPeriode" type="text" inputmode="numeric" placeholder="jj/mm/aaaa" maxlength="10" value="${dateVersFr(etatInterface.debutPeriode)}"></label><label>Au <input id="finPeriode" type="text" inputmode="numeric" placeholder="jj/mm/aaaa" maxlength="10" value="${dateVersFr(etatInterface.finPeriode)}"></label>${rangeActive ? '<button type="button" id="effacerPeriode" class="secondaire">Effacer</button>' : ""}</fieldset>` : ""}<button id="actualiser" class="secondaire">Actualiser</button></div>`
       : ""
   }</header><main class="contenu" id="vue"></main></section></div>`;
 }
@@ -363,15 +379,17 @@ function afficherEcran() {
       afficherEcran();
     };
   if (selectionner("#debutPeriode"))
-    selectionner("#debutPeriode").onchange = (e) => {
-      etatInterface.debutPeriode = e.target.value;
+    selectionner("#debutPeriode").oninput = (e) => { e.target.value = formaterSaisieDate(e.target.value); };
+  if (selectionner("#debutPeriode")) selectionner("#debutPeriode").onchange = (e) => {
+      etatInterface.debutPeriode = lireDateFr(e.target.value);
       if (etatInterface.finPeriode && etatInterface.debutPeriode > etatInterface.finPeriode)
         etatInterface.finPeriode = etatInterface.debutPeriode;
       afficherEcran();
     };
   if (selectionner("#finPeriode"))
-    selectionner("#finPeriode").onchange = (e) => {
-      etatInterface.finPeriode = e.target.value;
+    selectionner("#finPeriode").oninput = (e) => { e.target.value = formaterSaisieDate(e.target.value); };
+  if (selectionner("#finPeriode")) selectionner("#finPeriode").onchange = (e) => {
+      etatInterface.finPeriode = lireDateFr(e.target.value);
       if (etatInterface.debutPeriode && etatInterface.finPeriode < etatInterface.debutPeriode)
         etatInterface.debutPeriode = etatInterface.finPeriode;
       afficherEcran();
@@ -596,7 +614,7 @@ function courbeProduction(reports, mode = "day") {
       ),
     ),
   );
-  const max = Math.max(1, ...values.flat());
+  const max = Math.max(1, etatInterface.objectifProduction, ...values.flat());
   const width = Math.max(720, dates.length * 48);
   const height = 260;
   const left = 58;
@@ -643,6 +661,7 @@ function courbeProduction(reports, mode = "day") {
         `<text class="date-graphique" x="${xAt(index)}" y="244" text-anchor="middle">${mode === "month" ? new Date(`${date}-01T00:00:00`).toLocaleDateString("fr-FR", { month: "short", year: "2-digit" }) : date.slice(8, 10)}</text>`,
     )
     .join("");
+  const objectif = etatInterface.objectifProduction > 0 ? `<line class="ligne-objectif" x1="${left}" y1="${yAt(etatInterface.objectifProduction)}" x2="${right}" y2="${yAt(etatInterface.objectifProduction)}"/><text class="etiquette-objectif" x="${right-2}" y="${yAt(etatInterface.objectifProduction)-5}" text-anchor="end">Objectif ${etatInterface.objectifProduction.toLocaleString("fr-FR")}</text>` : "";
   const legend = equipes
     .map(
       (equipe, index) =>
@@ -650,23 +669,27 @@ function courbeProduction(reports, mode = "day") {
     )
     .join("");
 
-  return `<div class="graphique-ligne-avec-legende"><div class="conteneur-graphique-ligne"><svg class="graphique-ligne" style="min-width:${width}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="Évolution de la production par équipe ${mode === "month" ? "par mois" : "par jour"}">${grid}${series}${labels}</svg></div><div class="legende">${legend}</div></div>`;
+  return `<div class="graphique-ligne-avec-legende"><div class="conteneur-graphique-ligne"><svg class="graphique-ligne" style="min-width:${width}px" viewBox="0 0 ${width} ${height}" role="img" aria-label="Évolution de la production par équipe ${mode === "month" ? "par mois" : "par jour"}">${grid}${objectif}${series}${labels}</svg></div><div class="legende">${legend}</div></div>`;
 }
 function graphiqueComparaisonQuarts(reports) {
   const quarts = reglesMetier.QUARTS;
-  const valeurs = quarts.map((quart) => calculerSomme(reports.filter((rapport) => rapport.quart === quart).map((rapport) => rapport.production?.paniers)));
-  const maximum = Math.max(1, ...valeurs);
-  const largeur = 540, hauteur = 260, gauche = 62, droite = 520, haut = 20, bas = 205;
+  const dates = [...new Set(reports.map(r => r.date).filter(Boolean))].sort();
+  const donnees = dates.flatMap(date => quarts.flatMap(quart => Object.keys(reglesMetier.EQUIPES).map(equipe => ({ date, quart, equipe, valeur: calculerSomme(reports.filter(r => r.date === date && r.quart === quart && r.equipe === equipe).map(r => r.production?.paniers)) })).filter(x => x.valeur > 0)));
+  const maximum = Math.max(1, etatInterface.objectifProduction, ...donnees.map(x => x.valeur));
+  const largeur = Math.max(650, dates.length * 250), hauteur = 290, gauche = 62, droite = largeur - 18, haut = 24, bas = 220;
   const y = (valeur) => bas - valeur / maximum * (bas - haut);
   const grille = Array.from({ length: 5 }, (_, index) => {
     const valeur = maximum * index / 4, position = y(valeur);
     return `<g class="grille-graphique"><line x1="${gauche}" y1="${position}" x2="${droite}" y2="${position}"/><text x="${gauche - 8}" y="${position + 4}" text-anchor="end">${Math.round(valeur).toLocaleString("fr-FR")}</text></g>`;
   }).join("");
-  const bandes = valeurs.map((valeur, index) => {
-    const x = gauche + 45 + index * 145, hauteurBande = Math.max(0, bas - y(valeur));
-    return `<g><rect x="${x}" y="${y(valeur)}" width="74" height="${hauteurBande}" rx="5" fill="${["#2563eb", "#f59e0b", "#16a34a"][index]}"><title>${quarts[index]} : ${valeur.toLocaleString("fr-FR")} colis</title></rect><text class="date-graphique" x="${x + 37}" y="226" text-anchor="middle">${quarts[index]}</text><text class="date-graphique" x="${x + 37}" y="${Math.max(14, y(valeur) - 7)}" text-anchor="middle">${valeur.toLocaleString("fr-FR")}</text></g>`;
+  const groupes = dates.flatMap((date, di) => quarts.map((quart, qi) => ({ date, di, quart, qi }))), pas = (droite - gauche) / groupes.length;
+  const bandes = groupes.map(g => { const groupe = donnees.filter(d => d.date === g.date && d.quart === g.quart), bw = Math.max(6, Math.min(26, (pas - 8) / Math.max(1, groupe.length) - 3));
+    const bars = groupe.map((d, j) => { const x = gauche + g.di*3*pas + g.qi*pas + pas/2 + (j-(groupe.length-1)/2)*(bw+3)-bw/2; return `<rect x="${x}" y="${y(d.valeur)}" width="${bw}" height="${bas-y(d.valeur)}" rx="3" fill="${["#2563eb", "#f59e0b", "#ff2c2c", "#16a34a"][Object.keys(reglesMetier.EQUIPES).indexOf(d.equipe)]}"><title>${formaterDate(d.date)} · ${d.quart} · Équipe ${d.equipe} : ${d.valeur.toLocaleString("fr-FR")} colis</title></rect>`; }).join("");
+    return `${bars}<text class="date-graphique" x="${gauche+g.di*3*pas+g.qi*pas+pas/2}" y="239" text-anchor="middle">${g.quart}</text>${g.qi===1 ? `<text class="date-graphique" x="${gauche+g.di*3*pas+1.5*pas}" y="257" text-anchor="middle">${formaterDate(g.date)}</text>` : ""}`;
   }).join("");
-  return `<div class="conteneur-graphique-ligne graphique-bandes"><svg class="graphique-ligne" viewBox="0 0 ${largeur} ${hauteur}" role="img" aria-label="Comparaison de la production entre les trois quarts">${grille}${bandes}</svg></div>`;
+  const objectif = etatInterface.objectifProduction > 0 ? `<line class="ligne-objectif" x1="${gauche}" y1="${y(etatInterface.objectifProduction)}" x2="${droite}" y2="${y(etatInterface.objectifProduction)}"/><text class="etiquette-objectif" x="${droite-2}" y="${y(etatInterface.objectifProduction)-5}" text-anchor="end">Objectif ${etatInterface.objectifProduction.toLocaleString("fr-FR")}</text>` : "";
+  const legend = Object.keys(reglesMetier.EQUIPES).map((e, i) => `<span><i style="background:${["#2563eb", "#f59e0b", "#ff2c2c", "#16a34a"][i]}"></i>Équipe ${e}</span>`).join("");
+  return `<div class="graphique-ligne-avec-legende"><div class="conteneur-graphique-ligne"><svg class="graphique-ligne graphique-bandes" style="min-width:${largeur}px" viewBox="0 0 ${largeur} ${hauteur}" role="img" aria-label="Production par quart et par équipe">${grille}${objectif}${bandes}<text class="date-graphique" transform="translate(16 ${(haut+bas)/2}) rotate(-90)" text-anchor="middle">Production (colis)</text><text class="date-graphique" x="${(gauche+droite)/2}" y="282" text-anchor="middle">Jour · Quart · Équipe</text></svg></div><div class="legende">${legend}</div></div>`;
 }
 function joursFiltresGraphique(reports) {
   if (etatInterface.debutPeriode || etatInterface.finPeriode) {
@@ -805,9 +828,11 @@ function afficherAccueil(el) {
     </section>
   </div>
   <section class="panneau tendance-accueil">
-    <h2>${comparerQuarts ? "Comparaison de la production par quart" : `Évolution de la production par équipe — ${chartMode === "month" ? "par mois" : "par jour"}`}</h2>
+    <div class="entete-tableau"><h2>${comparerQuarts ? "Production par Quart" : `Évolution de la production par équipe — ${chartMode === "month" ? "par mois" : "par jour"}`}</h2>${etatInterface.administrateur ? `<label class="objectif-production">Objectif (colis/quart)<input id="objectifProduction" type="number" min="0" step="1" value="${etatInterface.objectifProduction || ""}" placeholder="Saisir un objectif"></label>` : ""}</div>
     ${comparerQuarts ? graphiqueComparaisonQuarts(rs) : courbeProduction(rs, chartMode)}
   </section>`;
+  const objectif = selectionner("#objectifProduction", el);
+  if (objectif) objectif.onchange = () => { etatInterface.objectifProduction = Math.max(0, Number(objectif.value) || 0); localStorage.setItem("rapport-cq-production-objective", String(etatInterface.objectifProduction)); afficherEcran(); };
 }
 function afficherCreation(el) {
   el.innerHTML = `<section class="panneau"><h2>Nouveau rapport de quart</h2><p class="discret">Créez ou complétez le rapport de votre équipe. Les rapports enregistrés restent consultables dans l’historique.</p><button id="demarrerRapport">Créer un rapport</button></section>`;

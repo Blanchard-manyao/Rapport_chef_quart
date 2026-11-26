@@ -72,7 +72,6 @@ button.alerte {
   background: #3c8651;
 }
 .barre-laterale .deconnexion {
-  margin-top: auto;
   background: #2E6F40;
 }
 .principal {
@@ -94,6 +93,7 @@ button.alerte {
 .entete .filtres {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   border-left: 1px solid #ffffff55;
   padding-left: 18px;
@@ -117,7 +117,7 @@ button.alerte {
   gap: 4px;
   white-space: nowrap;
 }
-.filtre-periode input[type="date"] {
+.filtre-periode input[type="text"] {
   min-width: 130px;
   padding: 5px;
 }
@@ -132,6 +132,7 @@ button.alerte {
   max-width: 1500px;
   margin: auto;
 }
+.principal, .contenu, .grille-deux > *, .panneau { min-width: 0; }
 .cartes {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1093,6 +1094,15 @@ body {
   font-size: 12px;
   white-space: normal;
 }
+.section-rapport .champ-heure-invalide { border: 2px solid #b42318 !important; box-shadow: 0 0 0 2px #b4231822; }
+.erreur-champ { color: #b42318; font-size: 12px; font-weight: 600; }
+.ligne-objectif { stroke: #b42318; stroke-width: 2; stroke-dasharray: 7 5; }
+.etiquette-objectif { fill: #b42318; font: 11px "Segoe UI", Arial, sans-serif; }
+.objectif-production { display: flex; align-items: center; gap: 8px; margin-left: auto; white-space: nowrap; }
+.objectif-production input { width: 150px; }
+.details-arrets .conteneur-tableau { max-height: min(62dvh, 720px); overflow: auto; }
+.details-arrets thead th { position: sticky; top: 0; z-index: 2; background: #fff; }
+.details-arrets table { min-width: 900px; }
 .panneau-rapport-copier {
   position: sticky;
   top: 8px;

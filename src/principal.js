@@ -11,6 +11,7 @@ const {
 const fichiers = require("node:fs");
 const chemins = require("node:path");
 const cryptographie = require("node:crypto");
+const { promisify } = require("node:util");
 // Une seule instance par session Windows ; un second lancement réactive la première.
 const verrouInstanceUnique = applicationElectron.requestSingleInstanceLock();
 if (!verrouInstanceUnique) applicationElectron.quit();
@@ -20,6 +21,7 @@ else
   });
 // Processus principal Electron : fenêtre, accès aux données et règles serveur.
 let fenetrePrincipale;
+let fermetureAutorisee = false;
 let utilisateurActif = null;
 let apiSqlite = null;
 let moduleSqlite = null;
@@ -476,6 +478,18 @@ function verifierMotDePasse(stored, p) {
       cryptographie.timingSafeEqual(expected, actual),
   };
 }
+async function verifierMotDePasseAsynchrone(stored, p) {
+  if (typeof stored === "string") {
+    const actual = await promisify(cryptographie.scrypt)(p, "rapport-cq-js-v1", 64);
+    const expected = Buffer.from(stored, "hex");
+    return { ok: expected.length === actual.length && cryptographie.timingSafeEqual(expected, actual), upgrade: expected.length === actual.length && cryptographie.timingSafeEqual(expected, actual) };
+  }
+  if (!stored?.salt || !stored?.hash) return { ok: false };
+  const iterations = Math.max(100000, Math.min(1000000, Number(stored.iterations) || 200000));
+  const expected = Buffer.from(stored.hash, "hex");
+  const actual = await promisify(cryptographie.pbkdf2)(p, Buffer.from(stored.salt, "hex"), iterations, expected.length, "sha256");
+  return { ok: expected.length === actual.length && cryptographie.timingSafeEqual(expected, actual) };
+}
 function sauvegarderChaqueJour() {
   if (!fichiers.existsSync(cheminBaseDonnees())) return;
   const dir = chemins.join(applicationElectron.getPath("userData"), "Sauvegardes");
@@ -517,7 +531,7 @@ ipcMain.handle("ack-recovery", () => {
   sauvegarderBase();
   return true;
 });
-ipcMain.handle("auth", (_, { user, password, confirmation, recoveryKey }) => {
+ipcMain.handle("auth", async (_, { user, password, confirmation, recoveryKey }) => {
   if (!user || !password)
     return { ok: false, message: "Saisissez le mot de passe." };
   const rapportExistant = donnees.users[user];
@@ -581,7 +595,7 @@ ipcMain.handle("auth", (_, { user, password, confirmation, recoveryKey }) => {
       remainingAttempts: 0,
       message: `Trop de tentatives. Réessayez après ${new Date(rapportExistant.lockedUntil).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}.`,
     };
-  const checked = verifierMotDePasse(rapportExistant, password);
+  const checked = await verifierMotDePasseAsynchrone(rapportExistant, password);
   if (!checked.ok) {
     attempt.count++;
     if (typeof rapportExistant === "object") {
@@ -1202,6 +1216,22 @@ function creerFenetrePrincipale() {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+  fenetrePrincipale.on("close", (event) => {
+    if (fermetureAutorisee) return;
+    event.preventDefault();
+    const choix = dialog.showMessageBoxSync(fenetrePrincipale, {
+      type: "question",
+      buttons: ["Quitter", "Continuer"],
+      defaultId: 1,
+      cancelId: 1,
+      title: "Fermer l’application",
+      message: "Voulez-vous vraiment fermer l’application ?",
+    });
+    if (choix === 0) {
+      fermetureAutorisee = true;
+      fenetrePrincipale.close();
+    }
   });
   fenetrePrincipale.webContents.on("did-fail-load", (_evenement, codeErreur, detailErreur, adresse, cadrePrincipal) => {
     if (cadrePrincipal)

@@ -4,7 +4,7 @@ const zonesArret = ["Prélavage", "Conditionnement", "Ligne 1", "Ligne 2", "Séc
 const equipes = ["A", "B", "C", "D"];
 const couleurs = ["#2563eb", "#f59e0b", "#ff2c2c", "#16a34a"];
 const KG_PAR_COLIS = 1260;
-const etat = { rapports: [], debut: "", fin: "", mois: new Date().toISOString().slice(0, 7), jour: "", onglet: "home" };
+const etat = { rapports: [], debut: "", fin: "", mois: new Date().toISOString().slice(0, 7), jour: "", onglet: "home", objectif: Number(localStorage.getItem("rapport-cq-production-objective")) || 0 };
 const elements = {
   connexion: document.querySelector("#connexion"), tableau: document.querySelector("#tableauDeBord"),
   formulaire: document.querySelector("#formulaireConnexion"), message: document.querySelector("#message"),
@@ -30,6 +30,8 @@ const somme = (valeurs) => valeurs.reduce((total, valeur) => total + nombre(vale
 const echapper = (valeur) => String(valeur ?? "").replace(/[&<>"']/g, (caractere) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[caractere]);
 const formaterDate = (date) => date ? new Date(`${date}T00:00:00`).toLocaleDateString("fr-FR") : "—";
 const formaterNombre = (valeur) => valeur.toLocaleString("fr-FR");
+const dateVersFr = (iso) => iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "";
+const dateVersIso = (fr) => { const m = String(fr || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/); if (!m) return ""; const day=Number(m[1]), month=Number(m[2]), year=Number(m[3]), d=new Date(year, month-1, day); return d.getFullYear()===year && d.getMonth()===month-1 && d.getDate()===day ? `${m[3]}-${m[2]}-${m[1]}` : ""; };
 
 function exporterXlsx(nom, nomFeuille, colonnes, lignes) {
   const feuille = XLSX.utils.aoa_to_sheet([colonnes, ...lignes]);
@@ -114,18 +116,24 @@ function joursFiltresGraphique(rapports) {
 
 function graphiqueComparaisonQuarts(rapports) {
   const quarts = ["07h-15h", "15h-23h", "23h-07h"];
-  const valeurs = quarts.map((quart) => somme(rapports.filter((rapport) => rapport.quart === quart).map((rapport) => rapport.production?.paniers)));
-  const maximum = Math.max(1, ...valeurs), largeur = 540, hauteur = 260, gauche = 62, droite = 520, haut = 20, bas = 205;
+  const dates = [...new Set(rapports.map(r => r.date).filter(Boolean))].sort();
+  const donnees = dates.flatMap(date => quarts.flatMap(quart => equipes.map(equipe => ({ date, quart, equipe, valeur: somme(rapports.filter(r => r.date === date && r.quart === quart && r.equipe === equipe).map(r => r.production?.paniers)) })).filter(x => x.valeur > 0)));
+  const maximum = Math.max(1, etat.objectif, ...donnees.map(x => x.valeur)), largeur = Math.max(650, dates.length * 250), hauteur = 290, gauche = 62, droite = largeur - 18, haut = 24, bas = 220;
   const y = (valeur) => bas - valeur / maximum * (bas - haut);
   const grille = Array.from({ length: 5 }, (_, index) => {
     const valeur = maximum * index / 4, position = y(valeur);
     return `<g class="grille-graphique"><line x1="${gauche}" y1="${position}" x2="${droite}" y2="${position}"/><text x="${gauche - 8}" y="${position + 4}" text-anchor="end">${Math.round(valeur).toLocaleString("fr-FR")}</text></g>`;
   }).join("");
-  const bandes = valeurs.map((valeur, index) => {
-    const x = gauche + 45 + index * 145, hauteurBande = Math.max(0, bas - y(valeur));
-    return `<g><rect x="${x}" y="${y(valeur)}" width="74" height="${hauteurBande}" rx="5" fill="${couleurs[index]}"><title>${quarts[index]} : ${formaterNombre(valeur)} colis</title></rect><text class="date-graphique" x="${x + 37}" y="226" text-anchor="middle">${quarts[index]}</text><text class="date-graphique" x="${x + 37}" y="${Math.max(14, y(valeur) - 7)}" text-anchor="middle">${formaterNombre(valeur)}</text></g>`;
+  const groupes = dates.flatMap((date, di) => quarts.map((quart, qi) => ({ date, quart, di, qi })));
+  const pas = (droite - gauche) / groupes.length;
+  const bandes = groupes.map(g => {
+    const groupe = donnees.filter(d => d.date === g.date && d.quart === g.quart), bw = Math.max(6, Math.min(26, (pas - 8) / Math.max(1, groupe.length) - 3));
+    const bars = groupe.map((d, j) => { const x = gauche + g.di * 3 * pas + g.qi * pas + pas / 2 + (j - (groupe.length - 1) / 2) * (bw + 3) - bw / 2; return `<rect x="${x}" y="${y(d.valeur)}" width="${bw}" height="${bas-y(d.valeur)}" rx="3" fill="${couleurs[equipes.indexOf(d.equipe)]}"><title>${formaterDate(d.date)} · ${d.quart} · Équipe ${d.equipe} : ${formaterNombre(d.valeur)} colis</title></rect>`; }).join("");
+    return `${bars}<text class="date-graphique" x="${gauche + g.di*3*pas + g.qi*pas + pas/2}" y="239" text-anchor="middle">${g.quart}</text>${g.qi === 1 ? `<text class="date-graphique" x="${gauche + g.di*3*pas + 1.5*pas}" y="257" text-anchor="middle">${formaterDate(g.date)}</text>` : ""}`;
   }).join("");
-  return `<div class="conteneur-graphique-ligne graphique-bandes"><svg class="graphique-ligne" viewBox="0 0 ${largeur} ${hauteur}" role="img" aria-label="Comparaison de la production entre les trois quarts">${grille}${bandes}</svg></div>`;
+  const objectif = etat.objectif > 0 ? `<line class="ligne-objectif" x1="${gauche}" y1="${y(etat.objectif)}" x2="${droite}" y2="${y(etat.objectif)}"/><text class="etiquette-objectif" x="${droite-2}" y="${y(etat.objectif)-5}" text-anchor="end">Objectif ${formaterNombre(etat.objectif)}</text>` : "";
+  const legende = equipes.map((e,i)=>`<span><i style="background:${couleurs[i]}"></i>Équipe ${e}</span>`).join("");
+  return `<div class="graphique-ligne-avec-legende"><div class="conteneur-graphique-ligne"><svg class="graphique-ligne graphique-bandes" style="min-width:${largeur}px" viewBox="0 0 ${largeur} ${hauteur}" role="img" aria-label="Production par quart et équipe">${grille}${objectif}${bandes}<text class="date-graphique" transform="translate(16 ${((haut+bas)/2)}) rotate(-90)" text-anchor="middle">Production (colis)</text><text class="date-graphique" x="${(gauche+droite)/2}" y="282" text-anchor="middle">Jour · Quart · Équipe</text></svg></div><div class="legende">${legende}</div></div>`;
 }
 
 function courbeProduction(rapports, mode) {
@@ -136,7 +144,7 @@ function courbeProduction(rapports, mode) {
   const dates = [...new Set(rapportsGraphique.map((rapport) => String(rapport.date || "").slice(0, mode === "month" ? 7 : 10)).filter(Boolean))].sort();
   if (!dates.length) return '<p class="discret">Aucune production enregistrée pour cette période.</p>';
   const valeurs = equipes.map((equipe) => dates.map((date) => somme(rapportsGraphique.filter((rapport) => String(rapport.date || "").startsWith(date) && rapport.equipe === equipe).map((rapport) => rapport.production?.paniers))));
-  const maximum = Math.max(1, ...valeurs.flat());
+  const maximum = Math.max(1, etat.objectif, ...valeurs.flat());
   const largeur = Math.max(720, dates.length * 48), hauteur = 260, gauche = 58, droite = largeur - 18, haut = 18, bas = 218;
   const x = (index) => dates.length === 1 ? (gauche + droite) / 2 : gauche + index / (dates.length - 1) * (droite - gauche);
   const y = (valeur) => bas - valeur / maximum * (bas - haut);
@@ -154,8 +162,9 @@ function courbeProduction(rapports, mode) {
     return `<g class="serie-graphique equipe-${equipes[index].toLowerCase()}"><path d="${chemin}"/>${pointsSvg}</g>`;
   }).join("");
   const libelles = dates.map((date, index) => `<text class="date-graphique" x="${x(index)}" y="244" text-anchor="middle">${mode === "month" ? new Date(`${date}-01T00:00:00`).toLocaleDateString("fr-FR", { month: "short", year: "2-digit" }) : date.slice(8, 10)}</text>`).join("");
+  const objectif = etat.objectif > 0 ? `<line class="ligne-objectif" x1="${gauche}" y1="${y(etat.objectif)}" x2="${droite}" y2="${y(etat.objectif)}"/><text class="etiquette-objectif" x="${droite-2}" y="${y(etat.objectif)-5}" text-anchor="end">Objectif ${formaterNombre(etat.objectif)}</text>` : "";
   const legende = equipes.map((equipe) => `<span><i class="couleur-equipe-${equipe.toLowerCase()}"></i>Équipe ${equipe}</span>`).join("");
-  return `<div class="graphique-ligne-avec-legende"><div class="conteneur-graphique-ligne"><svg class="graphique-ligne" style="min-width:${largeur}px" viewBox="0 0 ${largeur} ${hauteur}" role="img" aria-label="Évolution de la production par équipe ${mode === "month" ? "par mois" : "par jour"}">${grille}${series}${libelles}</svg></div><div class="legende">${legende}</div></div>`;
+  return `<div class="graphique-ligne-avec-legende"><div class="conteneur-graphique-ligne"><svg class="graphique-ligne" style="min-width:${largeur}px" viewBox="0 0 ${largeur} ${hauteur}" role="img" aria-label="Évolution de la production par équipe ${mode === "month" ? "par mois" : "par jour"}">${grille}${objectif}${series}${libelles}</svg></div><div class="legende">${legende}</div></div>`;
 }
 
 function afficherTable(rapports) {
@@ -199,7 +208,9 @@ function afficherTableauDeBord() {
   elements.contenu.innerHTML = `<div class="cartes"><div class="carte"><span>Rapports enregistrés</span><b>${formaterNombre(rapports.length)}</b></div><div class="carte"><span>Nombre de colis</span><b>${formaterNombre(production)}</b></div><div class="carte"><span>Tonnage réalisé</span><b>${formaterNombre(tonnageKg)} kg</b></div></div>
     <div class="grille-deux resume-accueil"><section class="panneau zones-accueil"><h2>Temps d’arrêt par zone</h2><div class="grille-zones">${zones.map(({ nom, minutes }) => `<article class="carte-zone"><span>${echapper(nom)}</span><b>${duree(minutes)}</b></article>`).join("")}</div></section>
     <section class="panneau repartition-accueil"><h2>Répartition de la production par équipe</h2><div class="disposition-camembert"><svg class="camembert" viewBox="0 0 100 100" role="img" aria-label="Répartition de la production entre les équipes">${secteurs}${etiquettesSecteurs.join("")}</svg><div>${repartition}</div></div></section></div>
-    <section class="panneau tendance-accueil"><h2>${comparerQuarts ? "Comparaison de la production par quart" : `Évolution de la production par équipe — ${modeGraphique === "month" ? "par mois" : "par jour"}`}</h2>${comparerQuarts ? graphiqueComparaisonQuarts(rapports) : courbeProduction(rapports, modeGraphique)}</section>`;
+    <section class="panneau tendance-accueil"><div class="entete-tableau"><h2>${comparerQuarts ? "Production par Quart" : `Évolution de la production par équipe — ${modeGraphique === "month" ? "par mois" : "par jour"}`}</h2><label class="objectif-production">Objectif (colis/quart)<input id="objectifProduction" type="number" min="0" step="1" value="${etat.objectif || ""}" placeholder="Saisir un objectif"></label></div>${comparerQuarts ? graphiqueComparaisonQuarts(rapports) : courbeProduction(rapports, modeGraphique)}</section>`;
+  const objectifInput = document.querySelector("#objectifProduction");
+  objectifInput.addEventListener("change", () => { etat.objectif = Math.max(0, Number(objectifInput.value) || 0); localStorage.setItem("rapport-cq-production-objective", String(etat.objectif)); afficherTableauDeBord(); });
 }
 
 function afficherRapportsEnregistres() {
@@ -288,8 +299,8 @@ function afficherOnglet() {
 
 function synchroniserFiltres() {
   elements.mois.value = etat.mois;
-  elements.debut.value = etat.debut;
-  elements.fin.value = etat.fin;
+  elements.debut.value = dateVersFr(etat.debut);
+  elements.fin.value = dateVersFr(etat.fin);
   const plageActive = Boolean(etat.debut || etat.fin);
   elements.mois.disabled = plageActive;
   elements.jour.disabled = plageActive;
@@ -325,25 +336,36 @@ async function chargerRapports() {
 elements.formulaire.addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = new FormData(elements.formulaire);
+  const bouton = elements.formulaire.querySelector('button[type="submit"]'), erreur = document.querySelector("#erreurMotDePasse");
+  bouton.disabled = true; bouton.textContent = "Connexion…"; erreur.textContent = "";
   try {
     await demander("/api/admin/login", { method: "POST", body: JSON.stringify({ username: form.get("username"), password: form.get("password") }) });
     elements.formulaire.reset();
     await chargerRapports();
-  } catch (error) { message(error.message); }
+  } catch (error) { if (/identifiant|mot de passe/i.test(error.message)) erreur.textContent = error.message; else message(error.message); }
+  finally { bouton.disabled = false; bouton.textContent = "Se connecter"; }
 });
 
 elements.actualiser.addEventListener("click", chargerRapports);
 document.querySelectorAll("[data-onglet]").forEach((bouton) => bouton.addEventListener("click", () => { etat.onglet = bouton.dataset.onglet; afficherOnglet(); }));
 elements.mois.addEventListener("change", () => { etat.mois = elements.mois.value; etat.jour = ""; afficherOnglet(); synchroniserFiltres(); });
 elements.jour.addEventListener("change", () => { etat.jour = elements.jour.value; afficherOnglet(); });
-elements.debut.addEventListener("change", () => { etat.debut = elements.debut.value; if (etat.fin && etat.debut > etat.fin) etat.fin = etat.debut; afficherOnglet(); synchroniserFiltres(); });
-elements.fin.addEventListener("change", () => { etat.fin = elements.fin.value; if (etat.debut && etat.fin < etat.debut) etat.debut = etat.fin; afficherOnglet(); synchroniserFiltres(); });
+const lireDateFiltre = (champ) => { const iso = dateVersIso(champ.value.trim()); champ.classList.toggle("champ-invalide", !!champ.value && !iso); return iso; };
+elements.debut.addEventListener("change", () => { etat.debut = lireDateFiltre(elements.debut); if (etat.fin && etat.debut > etat.fin) etat.fin = etat.debut; afficherOnglet(); synchroniserFiltres(); });
+elements.fin.addEventListener("change", () => { etat.fin = lireDateFiltre(elements.fin); if (etat.debut && etat.fin < etat.debut) etat.debut = etat.fin; afficherOnglet(); synchroniserFiltres(); });
+for (const champ of [elements.debut, elements.fin]) champ.addEventListener("input", () => { const digits = champ.value.replace(/\D/g, "").slice(0, 8); champ.value = digits.length > 4 ? `${digits.slice(0,2)}/${digits.slice(2,4)}/${digits.slice(4)}` : digits.length > 2 ? `${digits.slice(0,2)}/${digits.slice(2)}` : digits; });
 document.querySelector("#effacerPeriode").addEventListener("click", () => { etat.debut = ""; etat.fin = ""; afficherOnglet(); synchroniserFiltres(); });
 elements.deconnexion.addEventListener("click", async () => {
+  if (!window.confirm("Voulez-vous vraiment vous déconnecter ?")) return;
   await demander("/api/admin/logout", { method: "POST", body: "{}" });
   elements.tableau.classList.add("masque"); elements.deconnexion.classList.add("masque");
   elements.connexion.classList.remove("masque"); document.querySelector("#entetePortail").classList.remove("masque");
   document.body.classList.remove("connecte"); message("");
+});
+
+window.addEventListener("beforeunload", (event) => {
+  if (!document.body.classList.contains("connecte")) return;
+  event.preventDefault(); event.returnValue = "";
 });
 
 chargerRapports();

@@ -1,4 +1,5 @@
-import { createHmac, pbkdf2Sync, timingSafeEqual } from "node:crypto";
+import { createHmac, pbkdf2, timingSafeEqual } from "node:crypto";
+import { promisify } from "node:util";
 
 const COOKIE_NAME = "rapport_cq_admin";
 const SESSION_DURATION_SECONDS = 8 * 60 * 60;
@@ -77,7 +78,7 @@ function lireSession(request) {
   }
 }
 
-function verifierMotDePasse(motDePasse) {
+async function verifierMotDePasse(motDePasse) {
   const [algorithme, iterationsTexte, sel, empreinte] = String(
     process.env.ADMIN_PASSWORD_HASH || "",
   ).split("$");
@@ -92,7 +93,7 @@ function verifierMotDePasse(motDePasse) {
     return false;
 
   const attendu = Buffer.from(empreinte, "hex");
-  const calcule = pbkdf2Sync(motDePasse, sel, iterations, attendu.length, "sha256");
+  const calcule = await promisify(pbkdf2)(motDePasse, sel, iterations, attendu.length, "sha256");
   return attendu.length === calcule.length && timingSafeEqual(attendu, calcule);
 }
 
@@ -142,7 +143,7 @@ async function router(request) {
     }
 
     const identifiantValide = utilisateur === process.env.ADMIN_USERNAME;
-    const motDePasseValide = verifierMotDePasse(motDePasse);
+    const motDePasseValide = await verifierMotDePasse(motDePasse);
     if (!identifiantValide || !motDePasseValide) {
       try {
         await supabase("rpc/record_admin_login_failure", {

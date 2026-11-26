@@ -1,13 +1,6 @@
 :root { color-scheme: light; font-family: "Segoe UI", Arial, sans-serif; color: #163553; background: #f1f5f9; }
 * { box-sizing: border-box; cursor: pointer; user-select: none; }
-body {
-  margin: 0;
-  min-height: 100vh;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
+body { margin: 0; min-height: 100vh; }
 .page { width: min(100% - 36px, 1500px); margin: 34px auto; }
 .entete, .entete-tableau { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .sur-titre { margin: 0 0 8px; color: #2871a9; font-size: 12px; font-weight: 700; letter-spacing: .12em; }
@@ -37,6 +30,8 @@ input:focus, select:focus { outline: 3px solid #2a7eb333; border-color: #2871a9;
 .filtre-periode legend { padding: 0 4px; font-size: 12px; }
 .filtre-periode label { gap: 5px; }
 .filtre-periode input { width: 145px; }
+.erreur-champ { color: #b42318; font-size: 12px; font-weight: 500; }
+.champ-invalide { border-color: #b42318 !important; outline-color: #b4231833 !important; }
 .contenu-dashboard { display: grid; gap: 14px; }
 .cartes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .cartes .carte { min-height: 78px; display: flex; flex-direction: column; justify-content: center; gap: 5px; padding: 12px 16px; color: #66798c; }
@@ -49,6 +44,7 @@ input:focus, select:focus { outline: 3px solid #2a7eb333; border-color: #2871a9;
 .carte-zone b { font-size: 16px; }
 .disposition-camembert { display: grid; grid-template-columns: minmax(110px, 145px) 1fr; gap: 18px; align-items: center; }
 .camembert { display: block; width: min(145px, 100%); aspect-ratio: 1; }
+.etiquette-equipe-camembert { fill: #fff; font-size: 10px; font-weight: 700; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: #17324d; stroke-width: 2px; stroke-linejoin: round; }
 .ligne-zone { display: flex; justify-content: space-between; gap: 8px; padding: 9px 0; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
 .ligne-zone b { white-space: nowrap; }
 .point, .legende i { display: inline-block; width: 11px; height: 11px; margin-right: 5px; border-radius: 50%; }
@@ -75,6 +71,11 @@ input:focus, select:focus { outline: 3px solid #2a7eb333; border-color: #2871a9;
 .tableau-defilement { overflow-x: auto; }
 .details-arrets .tableau-defilement { max-height: min(62dvh, 720px); overflow: auto; }
 .details-arrets table { min-width: 900px; }
+.details-arrets thead th { position: sticky; top: 0; z-index: 2; background: #fff; }
+.ligne-objectif { stroke: #b42318; stroke-width: 2; stroke-dasharray: 7 5; }
+.etiquette-objectif { fill: #b42318; font: 11px "Segoe UI", Arial, sans-serif; }
+.objectif-production { display: flex; align-items: center; gap: 8px; margin-left: auto; white-space: nowrap; }
+.objectif-production input { width: 145px; }
 .fenetre-rapport-admin { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 12px; overflow: auto; background: #0f2438aa; }
 .rapport-admin-fiche { width: min(1080px, 96vw); max-height: 94dvh; display: grid; gap: 16px; overflow: auto; }
 .rapport-admin-fiche > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; position: sticky; top: -20px; z-index: 1; padding: 10px; background: #fff; border-bottom: 1px solid #dbe5ed; }
@@ -102,17 +103,18 @@ body.connecte footer { display: none; }
 .usine small { font-size: 14px; font-weight: 400; }
 .barre-laterale button { border: 0; border-radius: 7px; padding: 10px 12px; background: transparent; color: #dce8f2; text-align: left; cursor: pointer; }
 .barre-laterale button:hover, .barre-laterale button.actif { background: #2e6f40; color: #fff; }
-.barre-laterale .deconnexion { margin-top: auto; background: #2e6f40; }
+.barre-laterale .deconnexion { background: #2e6f40; }
 .principal { min-width: 0; min-height: 100vh; display: flex; flex-direction: column; }
 .entete-dashboard { min-height: 70px; height: auto; flex: 0 0 auto; gap: 16px; padding: 10px 20px; background: #163553; color: #fff; }
 .entete-dashboard h1 { flex: 0 0 auto; font-size: 20px; }
-.entete-dashboard .barre-filtres { flex: 1 1 auto; justify-content: flex-end; gap: 10px; margin: 0; padding: 0 0 0 18px; border-left: 1px solid #ffffff55; border-radius: 0; background: transparent; }
+.entete-dashboard .barre-filtres { flex: 1 1 auto; justify-content: flex-end; flex-wrap: nowrap; gap: 10px; margin: 0; padding: 0 0 0 18px; border-left: 1px solid #ffffff55; border-radius: 0; background: transparent; }
 .entete-dashboard .barre-filtres label { gap: 5px; font-size: 13px; }
-.entete-dashboard .barre-filtres input, .entete-dashboard .barre-filtres select { min-height: 32px; padding: 4px 7px; }
+.entete-dashboard .barre-filtres input, .entete-dashboard .barre-filtres select { min-height: 32px; padding: 4px 7px; color: #163553; color-scheme: light; }
 .entete-dashboard .filtre-periode { flex-wrap: nowrap; padding: 2px 8px 5px; }
 .entete-dashboard .filtre-periode input { width: 130px; }
+.entete-dashboard .objectif-production input { width: 130px; }
 .entete-dashboard .bouton.secondaire { min-height: 34px; padding: 6px 10px; }
-.contenu-dashboard { min-height: 0; flex: 1 1 auto; display: grid; align-content: start; gap: 12px; overflow: auto; padding: 16px 18px; }
+.contenu-dashboard { min-height: 0; flex: 1 1 auto; display: grid; align-content: start; gap: 12px; overflow: visible; padding: 16px 18px; }
 .contenu-dashboard:has(.cartes) { flex: 0 0 auto; display: flex; flex-direction: column; overflow: visible; }
 .contenu-dashboard:has(.cartes) > * { flex: 0 0 auto; }
 .contenu-dashboard:has(.cartes) > .cartes { margin: 0; }
@@ -130,4 +132,3 @@ body.connecte footer { display: none; }
 .graphique-bandes .graphique-ligne { min-width: 540px; height: 260px; }
 @media (max-width: 1000px) { .entete-dashboard { align-items: flex-start; flex-wrap: wrap; } .entete-dashboard .barre-filtres { flex-wrap: wrap; border-left: 0; padding: 0; } }
 @media (max-width: 760px) { body.connecte { overflow: auto; } body.connecte .page { height: auto; min-height: 100vh; } .coquille { height: auto; grid-template-columns: 1fr; } .barre-laterale { min-height: 0; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 10px; } .usine { flex: 1 1 100%; margin: 4px 8px 8px; } .barre-laterale button { flex: 1 1 145px; text-align: center; } .barre-laterale .deconnexion { margin-top: 0; } .principal { height: auto; min-height: calc(100vh - 130px); } .entete-dashboard { padding: 12px 14px; } .entete-dashboard .barre-filtres { justify-content: flex-start; } .contenu-dashboard { min-height: 65vh; } .contenu-dashboard:has(.cartes) > .resume-accueil { grid-template-columns: 1fr; } .contenu-dashboard:has(.cartes) .zones-accueil .grille-zones { flex: 0 0 auto; } .entete-dashboard .filtre-periode { flex-wrap: wrap; } }
-.etiquette-equipe-camembert { fill: #fff; font-size: 10px; font-weight: 700; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: #17324d; stroke-width: 2px; stroke-linejoin: round; }

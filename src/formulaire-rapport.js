@@ -37,8 +37,8 @@
         <option value="zone" ${arret.impact === "equipment" ? "" : "selected"}>Arrêt de zone</option>
         <option value="equipment" ${arret.impact === "equipment" ? "selected" : ""}>Panne équipement, zone en marche</option>
       </select>
-      <input data-arret="debut" aria-label="Heure de début de l’arrêt" placeholder="Début · 07H30" maxlength="5" value="${echapperTexteHtml(reglesMetier.formaterHeure(arret.start) || arret.start || "")}">
-      <input data-arret="fin" aria-label="Heure de fin de l’arrêt" placeholder="Fin · 08H15" maxlength="5" value="${echapperTexteHtml(reglesMetier.formaterHeure(arret.end) || arret.end || "")}">
+      <input data-arret="debut" aria-label="Heure de début de l’arrêt" placeholder="Début · 07H30" maxlength="5" inputmode="numeric" autocomplete="off" value="${echapperTexteHtml(reglesMetier.formaterHeure(arret.start) || arret.start || "")}">
+      <input data-arret="fin" aria-label="Heure de fin de l’arrêt" placeholder="Fin · 08H15" maxlength="5" inputmode="numeric" autocomplete="off" value="${echapperTexteHtml(reglesMetier.formaterHeure(arret.end) || arret.end || "")}">
       <input data-arret="cause" aria-label="Cause de l’arrêt" placeholder="Cause de l’arrêt" value="${echapperTexteHtml(arret.cause || "")}" list="${identifiantSuggestion(zone)}">
       <output class="duree-arret" data-duree-arret>Durée : —</output>
       <button type="button" class="alerte supprimer-arret" aria-label="Supprimer cet arrêt">×</button>
@@ -66,8 +66,8 @@
 
   function ligneGenerateur(periode = {}) {
     return `<div class="ligne-generateur">
-      <input data-heure-generateur="debut" aria-label="Heure de démarrage du générateur" placeholder="Démarrage · 07H30" maxlength="5" value="${echapperTexteHtml(reglesMetier.formaterHeure(periode.start) || periode.start || "")}">
-      <input data-heure-generateur="fin" aria-label="Heure d’arrêt du générateur" placeholder="Arrêt · 15H00" maxlength="5" value="${echapperTexteHtml(reglesMetier.formaterHeure(periode.end) || periode.end || "")}">
+      <input data-heure-generateur="debut" aria-label="Heure de démarrage du générateur" placeholder="Démarrage · 07H30" maxlength="5" inputmode="numeric" autocomplete="off" value="${echapperTexteHtml(reglesMetier.formaterHeure(periode.start) || periode.start || "")}">
+      <input data-heure-generateur="fin" aria-label="Heure d’arrêt du générateur" placeholder="Arrêt · 15H00" maxlength="5" inputmode="numeric" autocomplete="off" value="${echapperTexteHtml(reglesMetier.formaterHeure(periode.end) || periode.end || "")}">
       <output class="duree-generateur" data-duree-generateur>Fonctionnement : —</output>
       <button type="button" class="alerte supprimer-generateur" aria-label="Supprimer cette période">×</button>
     </div>`;
@@ -357,6 +357,8 @@
           const duration = valid ? reglesMetier.dureeArret({ start: debut, end: fin }, current.quart) : 0;
           if (impact !== "equipment") total += duration;
           const durationLabel = row.querySelector("[data-duree-arret]");
+          row.querySelector('[data-arret="debut"]').classList.toggle("champ-heure-invalide", complete && !valid);
+          row.querySelector('[data-arret="fin"]').classList.toggle("champ-heure-invalide", complete && !valid);
           durationLabel.textContent = valid
             ? `${impact === "equipment" ? `Panne ${equipment || "équipement"}` : "Arrêt de zone"} : ${reglesMetier.formaterDuree(duration)}`
             : complete
@@ -379,6 +381,8 @@
           complete = startMinute !== null && endMinute !== null,
           valid = complete && reglesMetier.intervalleArretValide(debut, fin, current.quart),
           duration = row.querySelector("[data-duree-generateur]");
+        row.querySelector('[data-heure-generateur="debut"]').classList.toggle("champ-heure-invalide", complete && !valid);
+        row.querySelector('[data-heure-generateur="fin"]').classList.toggle("champ-heure-invalide", complete && !valid);
         duration.textContent = valid
           ? `Fonctionnement : ${reglesMetier.formaterDuree(reglesMetier.dureeArret({ start: debut, end: fin }, current.quart))}`
           : complete
@@ -411,8 +415,10 @@
         const clean = whole + (fraction.length ? `.${fraction.join("")}` : "");
         if (clean !== field.value) field.value = clean;
       }
-      if (field.matches('[data-arret="debut"], [data-arret="fin"], [data-heure-generateur]'))
-        field.value = field.value.slice(0, 5);
+      if (field.matches('[data-arret="debut"], [data-arret="fin"], [data-heure-generateur]')) {
+        const digits = field.value.replace(/\D/g, "").slice(0, 4);
+        field.value = digits.length > 2 ? `${digits.slice(0, 2)}H${digits.slice(2)}` : digits;
+      }
       actualiserApercu();
     });
     form.addEventListener("change", actualiserApercu);

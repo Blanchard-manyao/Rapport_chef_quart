@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="/admin.css" />
   </head>
   <body>
-   <main class="page">
+    <main class="page">
       <header id="entetePortail" class="entete">
         <div>
           <p class="sur-titre">Bienvenue! Connectez vous à votre tableau de bord </p>
@@ -23,7 +23,7 @@
         <h2>Connexion</h2>
         <form id="formulaireConnexion">
           <label>Identifiant<input name="username" autocomplete="username" required /></label>
-          <label>Mot de passe<input name="password" type="password" autocomplete="current-password" required /></label>
+          <label>Mot de passe<input name="password" type="password" autocomplete="current-password" required /><span id="erreurMotDePasse" class="erreur-champ" aria-live="polite"></span></label>
           <button class="bouton" type="submit">Se connecter</button>
         </form>
       </section>
@@ -32,10 +32,10 @@
         <div class="coquille">
           <aside class="barre-laterale">
             <div class="usine">EXAT Missehi<br><small>Rapport de quart</small></div>
+            <button id="deconnexion" class="deconnexion masque" type="button">Déconnexion</button>
             <button type="button" data-onglet="home" class="actif">Tableau de bord</button>
             <button type="button" data-onglet="reports">Rapports enregistrés</button>
             <button type="button" data-onglet="stops">Temps d’arrêt par zone</button>
-            <button id="deconnexion" class="deconnexion masque" type="button">Déconnexion</button>
           </aside>
           <section class="principal">
             <header class="entete entete-dashboard">
@@ -43,7 +43,7 @@
               <div class="barre-filtres">
                 <label>Mois <input id="mois" type="month"></label>
                 <label>Jour <select id="jour"><option value="">Tous les jours</option></select></label>
-                <fieldset class="filtre-periode"><legend>Période</legend><label>Du <input id="debutPeriode" type="date"></label><label>Au <input id="finPeriode" type="date"></label><button id="effacerPeriode" class="bouton secondaire masque" type="button">Effacer</button></fieldset>
+                <fieldset class="filtre-periode"><legend>Période</legend><label>Du <input id="debutPeriode" type="text" inputmode="numeric" placeholder="jj/mm/aaaa" maxlength="10" autocomplete="off"></label><label>Au <input id="finPeriode" type="text" inputmode="numeric" placeholder="jj/mm/aaaa" maxlength="10" autocomplete="off"></label><button id="effacerPeriode" class="bouton secondaire masque" type="button">Effacer</button></fieldset>
                 <button id="actualiser" class="bouton secondaire" type="button">Actualiser</button>
               </div>
             </header>
