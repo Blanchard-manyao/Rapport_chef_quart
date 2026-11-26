@@ -685,7 +685,7 @@ ipcMain.handle("logout", async () => {
   // demande le focus. Re-focaliser ici ciblait parfois le document précédent.
   return true;
 });
-ipcMain.handle("focus-applicationElectron", () => activerFenetrePrincipale());
+ipcMain.handle("focus-app", () => activerFenetrePrincipale());
 ipcMain.handle("change-password", (_, { current, next }) => {
   if (!utilisateurActif) throw new Error("Aucun profil connecté.");
   if (!verifierMotDePasse(donnees.users[utilisateurActif], current || "").ok)

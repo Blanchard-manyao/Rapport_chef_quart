@@ -1224,6 +1224,7 @@ body {
   .contexte-formulaire .champ select {
     flex: 1;
   }
+}
 .principal:has(.details-arrets) > .entete { position: sticky; top: 0; z-index: 10; }
 .principal { min-width: 0; max-width: 100%; overflow-x: hidden; }
 .contenu:has(.details-arrets) { width: 100%; min-width: 0; max-width: none; margin: 0; overflow-x: hidden; overflow-y: auto; }
