@@ -62,6 +62,8 @@ input:focus, select:focus { outline: 3px solid #2a7eb333; border-color: #2871a9;
 .graphique-ligne { display: block; width: 100%; min-width: 700px; height: 245px; overflow: visible; }
 .grille-graphique line { stroke: #e2e8f0; }
 .grille-graphique text, .date-graphique { fill: #66798c; font: 11px "Segoe UI", Arial, sans-serif; }
+.date-graphique, .legende { font-weight: 700; }
+.code-equipe-bande { fill: #fff; font: 700 10px "Segoe UI", Arial, sans-serif; pointer-events: none; }
 .serie-graphique path { fill: none; stroke-width: 3; }
 .serie-graphique circle { stroke: #fff; stroke-width: 1.5; }
 .legende { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 9px 18px; padding-top: 0; font-size: 13px; }
@@ -69,6 +71,7 @@ input:focus, select:focus { outline: 3px solid #2a7eb333; border-color: #2871a9;
 .entete-tableau { margin-bottom: 12px; }
 .entete-tableau h2 { margin: 0; }
 .tableau-defilement { overflow-x: auto; }
+.tableau-defilement { width: 100%; max-width: 100%; }
 .details-arrets .tableau-defilement { max-height: min(62dvh, 720px); overflow: auto; }
 .details-arrets table { min-width: 900px; }
 .details-arrets thead th { position: sticky; top: 0; z-index: 2; background: #fff; }
@@ -103,7 +106,7 @@ body.connecte footer { display: none; }
 .usine small { font-size: 14px; font-weight: 400; }
 .barre-laterale button { border: 0; border-radius: 7px; padding: 10px 12px; background: transparent; color: #dce8f2; text-align: left; cursor: pointer; }
 .barre-laterale button:hover, .barre-laterale button.actif { background: #2e6f40; color: #fff; }
-.barre-laterale .deconnexion { background: #2e6f40; }
+.barre-laterale .deconnexion { margin-top: auto; background: #2e6f40; }
 .principal { min-width: 0; min-height: 100vh; display: flex; flex-direction: column; }
 .entete-dashboard { min-height: 70px; height: auto; flex: 0 0 auto; gap: 16px; padding: 10px 20px; background: #163553; color: #fff; }
 .entete-dashboard h1 { flex: 0 0 auto; font-size: 20px; }
@@ -115,6 +118,7 @@ body.connecte footer { display: none; }
 .entete-dashboard .objectif-production input { width: 130px; }
 .entete-dashboard .bouton.secondaire { min-height: 34px; padding: 6px 10px; }
 .contenu-dashboard { min-height: 0; flex: 1 1 auto; display: grid; align-content: start; gap: 12px; overflow: visible; padding: 16px 18px; }
+.contenu-dashboard, .principal { min-width: 0; max-width: 100%; }
 .contenu-dashboard:has(.cartes) { flex: 0 0 auto; display: flex; flex-direction: column; overflow: visible; }
 .contenu-dashboard:has(.cartes) > * { flex: 0 0 auto; }
 .contenu-dashboard:has(.cartes) > .cartes { margin: 0; }

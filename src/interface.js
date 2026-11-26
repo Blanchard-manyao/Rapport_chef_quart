@@ -36,18 +36,6 @@ const selectionner = (s, root = document) => root.querySelector(s),
     );
 const formaterDate = (x) =>
   x ? new Date(x + "T00:00:00").toLocaleDateString("fr-FR") : "";
-const dateVersFr = (iso) => iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "";
-function lireDateFr(valeur) {
-  const match = String(valeur || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!match) return "";
-  const iso = `${match[3]}-${match[2]}-${match[1]}`;
-  const date = new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
-  return date.getFullYear() === Number(match[3]) && date.getMonth() === Number(match[2]) - 1 && date.getDate() === Number(match[1]) ? iso : "";
-}
-function formaterSaisieDate(valeur) {
-  const chiffres = String(valeur || "").replace(/\D/g, "").slice(0, 8);
-  return chiffres.length > 4 ? `${chiffres.slice(0, 2)}/${chiffres.slice(2, 4)}/${chiffres.slice(4)}` : chiffres.length > 2 ? `${chiffres.slice(0, 2)}/${chiffres.slice(2)}` : chiffres;
-}
 // jetonFiltreDate : traduit le filtre de dates en suffixe lisible pour le fichier exporté.
 function jetonFiltreDate(datePrecise = "") {
   const compact = (date) => String(date || "").replaceAll("-", "");
@@ -237,6 +225,7 @@ function afficherConnexion(refocaliserApresConnexion = false) {
       await rapportQuart.deconnecterUtilisateur();
       selectionner("#messageConnexion").textContent = `Connexion interrompue : ${error.message}`;
       submitButton.disabled = false;
+      submitButton.textContent = "Se connecter";
       return;
     }
     if (etatInterface.administrateur && !etatInterface.minuteurActualisation)
@@ -265,7 +254,7 @@ function afficherConnexion(refocaliserApresConnexion = false) {
       }
     }
   };
-  selectionner("#motDePasseOublie").onclick = () => dialogueReinitialisationMotDePasse(user.value);
+  selectionner("#motDePasseOublie").onclick = () => dialogueReinitialisationMotDePasse(profil.value);
 }
 function dialogueReinitialisationMotDePasse(user) {
   if (user === "Administrateur") {
@@ -325,9 +314,9 @@ function afficherStructureApplication() {
     ? ""
     : '<button id="changerEquipe" class="secondaire">Changer d’équipe</button>';
   const peutSynchroniser = etatInterface.administrateur || ["A", "B", "C", "D"].includes(etatInterface.utilisateur);
-  return `<div class="coquille"><aside class="barre-laterale"><div class="usine">EXAT Missehi<br><small>Rapport de quart</small></div><button id="deconnexion" class="deconnexion">Déconnexion</button>${etatInterface.administrateur ? '<button id="configurerSynchronisation" class="secondaire">Configurer l’accès au portail</button>' : ""}${peutSynchroniser ? '<button id="synchroniserRapports" class="bouton-synchronisation">⇧ Synchroniser les rapports</button>' : ""}${tabs.map(([k, t]) => `<button data-onglet="${k}" class="${etatInterface.onglet === k ? "actif" : ""}">${t}</button>`).join("")}${equipeActions}<button id="motDePasse" class="secondaire">Changer le mot de passe</button></aside><section class="principal"><header class="entete"><h1>${titles[etatInterface.onglet]}</h1>${
+  return `<div class="coquille"><aside class="barre-laterale"><div class="usine">EXAT Missehi<br><small>Rapport de quart</small></div>${etatInterface.administrateur ? '<button id="configurerSynchronisation" class="secondaire">Configurer l’accès au portail</button>' : ""}${peutSynchroniser ? '<button id="synchroniserRapports" class="bouton-synchronisation">⇧ Synchroniser les rapports</button>' : ""}${tabs.map(([k, t]) => `<button data-onglet="${k}" class="${etatInterface.onglet === k ? "actif" : ""}">${t}</button>`).join("")}${equipeActions}<button id="motDePasse" class="secondaire">Changer le mot de passe</button><button id="deconnexion" class="deconnexion">Déconnexion</button></aside><section class="principal"><header class="entete ${etatInterface.administrateur ? "entete-admin" : ""}"><h1>${titles[etatInterface.onglet]}</h1>${
     showFilters
-      ? `<div class="filtres"><label>Mois <input id="mois" type="month" value="${etatInterface.mois}" ${rangeActive ? "disabled" : ""}></label><label>Jour <select id="jour" ${rangeActive ? "disabled" : ""}><option value="">Tous les jours</option>${Array.from(
+      ? `<div class="filtres"><label>Mois <input id="mois" type="month" lang="fr-FR" value="${etatInterface.mois}" ${rangeActive ? "disabled" : ""}></label><label>Jour <select id="jour" ${rangeActive ? "disabled" : ""}><option value="">Tous les jours</option>${Array.from(
           { length: count },
           (_, i) => String(i + 1).padStart(2, "0"),
         )
@@ -337,7 +326,7 @@ function afficherStructureApplication() {
           )
           .join(
             "",
-          )}</select></label>${etatInterface.administrateur ? `<fieldset class="filtre-periode"><legend>Période</legend><label>Du <input id="debutPeriode" type="text" inputmode="numeric" placeholder="jj/mm/aaaa" maxlength="10" value="${dateVersFr(etatInterface.debutPeriode)}"></label><label>Au <input id="finPeriode" type="text" inputmode="numeric" placeholder="jj/mm/aaaa" maxlength="10" value="${dateVersFr(etatInterface.finPeriode)}"></label>${rangeActive ? '<button type="button" id="effacerPeriode" class="secondaire">Effacer</button>' : ""}</fieldset>` : ""}<button id="actualiser" class="secondaire">Actualiser</button></div>`
+          )}</select></label>${etatInterface.administrateur ? `<fieldset class="filtre-periode"><legend>Période</legend><label>Du <input id="debutPeriode" type="date" lang="fr-FR" value="${etatInterface.debutPeriode}"></label><label>Au <input id="finPeriode" type="date" lang="fr-FR" value="${etatInterface.finPeriode}"></label>${rangeActive ? '<button type="button" id="effacerPeriode" class="secondaire">Effacer</button>' : ""}</fieldset>` : ""}<button id="actualiser" class="secondaire">Actualiser</button></div>`
       : ""
   }</header><main class="contenu" id="vue"></main></section></div>`;
 }
@@ -378,18 +367,14 @@ function afficherEcran() {
       etatInterface.jour = e.target.value;
       afficherEcran();
     };
-  if (selectionner("#debutPeriode"))
-    selectionner("#debutPeriode").oninput = (e) => { e.target.value = formaterSaisieDate(e.target.value); };
   if (selectionner("#debutPeriode")) selectionner("#debutPeriode").onchange = (e) => {
-      etatInterface.debutPeriode = lireDateFr(e.target.value);
+      etatInterface.debutPeriode = e.target.value;
       if (etatInterface.finPeriode && etatInterface.debutPeriode > etatInterface.finPeriode)
         etatInterface.finPeriode = etatInterface.debutPeriode;
       afficherEcran();
     };
-  if (selectionner("#finPeriode"))
-    selectionner("#finPeriode").oninput = (e) => { e.target.value = formaterSaisieDate(e.target.value); };
   if (selectionner("#finPeriode")) selectionner("#finPeriode").onchange = (e) => {
-      etatInterface.finPeriode = lireDateFr(e.target.value);
+      etatInterface.finPeriode = e.target.value;
       if (etatInterface.debutPeriode && etatInterface.finPeriode < etatInterface.debutPeriode)
         etatInterface.debutPeriode = etatInterface.finPeriode;
       afficherEcran();
@@ -684,7 +669,7 @@ function graphiqueComparaisonQuarts(reports) {
   }).join("");
   const groupes = dates.flatMap((date, di) => quarts.map((quart, qi) => ({ date, di, quart, qi }))), pas = (droite - gauche) / groupes.length;
   const bandes = groupes.map(g => { const groupe = donnees.filter(d => d.date === g.date && d.quart === g.quart), bw = Math.max(6, Math.min(26, (pas - 8) / Math.max(1, groupe.length) - 3));
-    const bars = groupe.map((d, j) => { const x = gauche + g.di*3*pas + g.qi*pas + pas/2 + (j-(groupe.length-1)/2)*(bw+3)-bw/2; return `<rect x="${x}" y="${y(d.valeur)}" width="${bw}" height="${bas-y(d.valeur)}" rx="3" fill="${["#2563eb", "#f59e0b", "#ff2c2c", "#16a34a"][Object.keys(reglesMetier.EQUIPES).indexOf(d.equipe)]}"><title>${formaterDate(d.date)} · ${d.quart} · Équipe ${d.equipe} : ${d.valeur.toLocaleString("fr-FR")} colis</title></rect>`; }).join("");
+    const bars = groupe.map((d, j) => { const x = gauche + g.di*3*pas + g.qi*pas + pas/2 + (j-(groupe.length-1)/2)*(bw+3)-bw/2; return `<g><rect x="${x}" y="${y(d.valeur)}" width="${bw}" height="${bas-y(d.valeur)}" rx="3" fill="${["#2563eb", "#f59e0b", "#ff2c2c", "#16a34a"][Object.keys(reglesMetier.EQUIPES).indexOf(d.equipe)]}"><title>${formaterDate(d.date)} · ${d.quart} · Équipe ${d.equipe} : ${d.valeur.toLocaleString("fr-FR")} colis</title></rect>${bas-y(d.valeur)>18 ? `<text class="code-equipe-bande" x="${x+bw/2}" y="${Math.min(bas-4,y(d.valeur)+14)}" text-anchor="middle">${d.equipe}</text>` : ""}</g>`; }).join("");
     return `${bars}<text class="date-graphique" x="${gauche+g.di*3*pas+g.qi*pas+pas/2}" y="239" text-anchor="middle">${g.quart}</text>${g.qi===1 ? `<text class="date-graphique" x="${gauche+g.di*3*pas+1.5*pas}" y="257" text-anchor="middle">${formaterDate(g.date)}</text>` : ""}`;
   }).join("");
   const objectif = etatInterface.objectifProduction > 0 ? `<line class="ligne-objectif" x1="${gauche}" y1="${y(etatInterface.objectifProduction)}" x2="${droite}" y2="${y(etatInterface.objectifProduction)}"/><text class="etiquette-objectif" x="${droite-2}" y="${y(etatInterface.objectifProduction)-5}" text-anchor="end">Objectif ${etatInterface.objectifProduction.toLocaleString("fr-FR")}</text>` : "";

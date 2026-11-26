@@ -117,7 +117,7 @@ button.alerte {
   gap: 4px;
   white-space: nowrap;
 }
-.filtre-periode input[type="text"] {
+.filtre-periode input[type="date"] {
   min-width: 130px;
   padding: 5px;
 }
@@ -194,6 +194,8 @@ input {
   min-width: 0;
 }
 .conteneur-tableau {
+  width: 100%;
+  max-width: 100%;
   overflow: auto;
 }
 .details-arrets .conteneur-tableau { max-height: min(62dvh, 720px); overflow: auto; }
@@ -579,6 +581,8 @@ tr:hover td {
   fill: #52677d;
   font-size: 11px;
 }
+.date-graphique, .legende { font-weight: 700; }
+.code-equipe-bande { fill: #fff; font: 700 10px "Segoe UI", Arial, sans-serif; pointer-events: none; }
 .serie-graphique path {
   fill: none;
   stroke-width: 3;
@@ -619,7 +623,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 .entete {
   flex: 0 0 70px;
@@ -963,6 +967,19 @@ body {
   .contenu:has(.cartes) > .resume-accueil {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
+}
+.entete-admin { min-height: 70px; height: auto; flex-wrap: nowrap; gap: 12px; padding: 8px 16px; }
+.entete-admin h1 { flex: 0 0 auto; white-space: nowrap; }
+.entete-admin .filtres { min-width: 0; flex: 1 1 auto; flex-wrap: nowrap; justify-content: flex-end; gap: 7px; padding-left: 10px; }
+.entete-admin .filtres > label { gap: 5px; white-space: nowrap; font-size: 13px; }
+.entete-admin .filtres input, .entete-admin .filtres select { min-width: 0; max-width: 140px; padding: 5px 7px; }
+.entete-admin .filtre-periode { flex-wrap: nowrap; gap: 5px; padding: 2px 6px 5px; }
+.entete-admin .filtre-periode input { min-width: 0; width: 130px; }
+.entete-admin .filtres > button { flex: 0 0 auto; white-space: nowrap; }
+.contenu:has(.cartes) { overflow-x: auto; }
+@media (max-width: 1150px) {
+  .entete-admin { align-items: flex-start; flex-wrap: wrap; }
+  .entete-admin .filtres { flex: 1 1 100%; flex-wrap: wrap; justify-content: flex-start; border-left: 0; padding-left: 0; }
 }
 .editeur-rapport {
   width: calc(100vw - 16px) !important;

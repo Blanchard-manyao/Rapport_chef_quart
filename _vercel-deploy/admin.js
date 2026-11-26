@@ -30,8 +30,6 @@ const somme = (valeurs) => valeurs.reduce((total, valeur) => total + nombre(vale
 const echapper = (valeur) => String(valeur ?? "").replace(/[&<>"']/g, (caractere) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[caractere]);
 const formaterDate = (date) => date ? new Date(`${date}T00:00:00`).toLocaleDateString("fr-FR") : "—";
 const formaterNombre = (valeur) => valeur.toLocaleString("fr-FR");
-const dateVersFr = (iso) => iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "";
-const dateVersIso = (fr) => { const m = String(fr || "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/); if (!m) return ""; const day=Number(m[1]), month=Number(m[2]), year=Number(m[3]), d=new Date(year, month-1, day); return d.getFullYear()===year && d.getMonth()===month-1 && d.getDate()===day ? `${m[3]}-${m[2]}-${m[1]}` : ""; };
 
 function exporterXlsx(nom, nomFeuille, colonnes, lignes) {
   const feuille = XLSX.utils.aoa_to_sheet([colonnes, ...lignes]);
@@ -128,7 +126,7 @@ function graphiqueComparaisonQuarts(rapports) {
   const pas = (droite - gauche) / groupes.length;
   const bandes = groupes.map(g => {
     const groupe = donnees.filter(d => d.date === g.date && d.quart === g.quart), bw = Math.max(6, Math.min(26, (pas - 8) / Math.max(1, groupe.length) - 3));
-    const bars = groupe.map((d, j) => { const x = gauche + g.di * 3 * pas + g.qi * pas + pas / 2 + (j - (groupe.length - 1) / 2) * (bw + 3) - bw / 2; return `<rect x="${x}" y="${y(d.valeur)}" width="${bw}" height="${bas-y(d.valeur)}" rx="3" fill="${couleurs[equipes.indexOf(d.equipe)]}"><title>${formaterDate(d.date)} · ${d.quart} · Équipe ${d.equipe} : ${formaterNombre(d.valeur)} colis</title></rect>`; }).join("");
+    const bars = groupe.map((d, j) => { const x = gauche + g.di * 3 * pas + g.qi * pas + pas / 2 + (j - (groupe.length - 1) / 2) * (bw + 3) - bw / 2; return `<g><rect x="${x}" y="${y(d.valeur)}" width="${bw}" height="${bas-y(d.valeur)}" rx="3" fill="${couleurs[equipes.indexOf(d.equipe)]}"><title>${formaterDate(d.date)} · ${d.quart} · Équipe ${d.equipe} : ${formaterNombre(d.valeur)} colis</title></rect>${bas-y(d.valeur)>18 ? `<text class="code-equipe-bande" x="${x+bw/2}" y="${Math.min(bas-4,y(d.valeur)+14)}" text-anchor="middle">${d.equipe}</text>` : ""}</g>`; }).join("");
     return `${bars}<text class="date-graphique" x="${gauche + g.di*3*pas + g.qi*pas + pas/2}" y="239" text-anchor="middle">${g.quart}</text>${g.qi === 1 ? `<text class="date-graphique" x="${gauche + g.di*3*pas + 1.5*pas}" y="257" text-anchor="middle">${formaterDate(g.date)}</text>` : ""}`;
   }).join("");
   const objectif = etat.objectif > 0 ? `<line class="ligne-objectif" x1="${gauche}" y1="${y(etat.objectif)}" x2="${droite}" y2="${y(etat.objectif)}"/><text class="etiquette-objectif" x="${droite-2}" y="${y(etat.objectif)-5}" text-anchor="end">Objectif ${formaterNombre(etat.objectif)}</text>` : "";
@@ -299,8 +297,8 @@ function afficherOnglet() {
 
 function synchroniserFiltres() {
   elements.mois.value = etat.mois;
-  elements.debut.value = dateVersFr(etat.debut);
-  elements.fin.value = dateVersFr(etat.fin);
+  elements.debut.value = etat.debut;
+  elements.fin.value = etat.fin;
   const plageActive = Boolean(etat.debut || etat.fin);
   elements.mois.disabled = plageActive;
   elements.jour.disabled = plageActive;
@@ -350,10 +348,8 @@ elements.actualiser.addEventListener("click", chargerRapports);
 document.querySelectorAll("[data-onglet]").forEach((bouton) => bouton.addEventListener("click", () => { etat.onglet = bouton.dataset.onglet; afficherOnglet(); }));
 elements.mois.addEventListener("change", () => { etat.mois = elements.mois.value; etat.jour = ""; afficherOnglet(); synchroniserFiltres(); });
 elements.jour.addEventListener("change", () => { etat.jour = elements.jour.value; afficherOnglet(); });
-const lireDateFiltre = (champ) => { const iso = dateVersIso(champ.value.trim()); champ.classList.toggle("champ-invalide", !!champ.value && !iso); return iso; };
-elements.debut.addEventListener("change", () => { etat.debut = lireDateFiltre(elements.debut); if (etat.fin && etat.debut > etat.fin) etat.fin = etat.debut; afficherOnglet(); synchroniserFiltres(); });
-elements.fin.addEventListener("change", () => { etat.fin = lireDateFiltre(elements.fin); if (etat.debut && etat.fin < etat.debut) etat.debut = etat.fin; afficherOnglet(); synchroniserFiltres(); });
-for (const champ of [elements.debut, elements.fin]) champ.addEventListener("input", () => { const digits = champ.value.replace(/\D/g, "").slice(0, 8); champ.value = digits.length > 4 ? `${digits.slice(0,2)}/${digits.slice(2,4)}/${digits.slice(4)}` : digits.length > 2 ? `${digits.slice(0,2)}/${digits.slice(2)}` : digits; });
+elements.debut.addEventListener("change", () => { etat.debut = elements.debut.value; if (etat.fin && etat.debut > etat.fin) etat.fin = etat.debut; afficherOnglet(); synchroniserFiltres(); });
+elements.fin.addEventListener("change", () => { etat.fin = elements.fin.value; if (etat.debut && etat.fin < etat.debut) etat.debut = etat.fin; afficherOnglet(); synchroniserFiltres(); });
 document.querySelector("#effacerPeriode").addEventListener("click", () => { etat.debut = ""; etat.fin = ""; afficherOnglet(); synchroniserFiltres(); });
 elements.deconnexion.addEventListener("click", async () => {
   if (!window.confirm("Voulez-vous vraiment vous déconnecter ?")) return;
